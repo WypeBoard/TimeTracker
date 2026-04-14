@@ -22,7 +22,7 @@ def cmd_start(time_override=None):
 
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
-    time_str = time_override or now.strftime("%H:%M:00")
+    time_str = time_override or now.strftime("%H:%M")
     row = ws.max_row + 1
 
     ws.cell(row=row, column=1, value=date_str)
@@ -30,12 +30,12 @@ def cmd_start(time_override=None):
     ws.cell(row=row, column=3, value=time_str)
     ws.cell(row=row, column=4, value=None)
     ws.cell(row=row, column=5,
-            value=f'=IF(D{row}<>"",FLOOR(ABS(D{row})-C{row})*24,2),"")')
+            value=f'=IF(D{row}<>"",FLOOR((D{row}-C{row})*24,2),"")')
     format_log_row(ws, row)
 
     note = " (manually set)" if time_override else ""
     wb.save(EXCEL_FILE)
-    print(f"Started at {time_str} on {date_str}{note}")
+    print(f"▶  Started at {time_str} on {date_str}{note}")
 
 
 def cmd_pause(time_override=None):

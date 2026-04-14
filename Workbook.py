@@ -35,6 +35,10 @@ def format_log_row(ws, row):
         cell.alignment = Alignment(horizontal="center", vertical="center")
         if fill:
             cell.fill = fill
+    ws.cell(row=row, column=2).number_format = "General"  # prevent @-prefix on ISOWEEKNUM formula
+    # Force Start and End columns to plain text to avoid Excel time serial conversion
+    ws.cell(row=row, column=3).number_format = "@"
+    ws.cell(row=row, column=4).number_format = "@"
     ws.cell(row=row, column=5).number_format = "0.00"
 
 
@@ -44,6 +48,22 @@ def find_open_session(ws):
         if ws.cell(row=row, column=3).value and not ws.cell(row=row, column=4).value:
             return row
     return None
+
+
+def _to_hhmm(val):
+    """Normalise a cell value to 'HH:MM' string regardless of type."""
+    if val is None:
+        return None
+    if hasattr(val, "hour"):  # datetime.time or datetime.datetime
+        return f"{val.hour:02d}:{val.minute:02d}"
+    s = str(val).strip()
+    # Handle Excel decimal time serial (shouldn't happen after format fix, but just in case)
+    try:
+        f = float(s)
+        total_minutes = round(f * 24 * 60)
+        return f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
+    except ValueError:
+        return s  # already a plain "HH:MM" string
 
 
 def read_log(ws):
@@ -56,23 +76,23 @@ def read_log(ws):
     for row in range(2, ws.max_row + 1):
         date_val = ws.cell(row=row, column=1).value
         week_val = ws.cell(row=row, column=2).value
-        start_val = ws.cell(row=row, column=3).value
-        end_val = ws.cell(row=row, column=4).value
+        start_val = _to_hhmm(ws.cell(row=row, column=3).value)
+        end_val   = _to_hhmm(ws.cell(row=row, column=4).value)
 
         if not (date_val and start_val and end_val):
             continue
 
         date_str = str(date_val).strip()
         try:
-            s = datetime.strptime(str(start_val).strip(), "%H:%M")
-            e = datetime.strptime(str(end_val).strip(), "%H:%M")
+            s = datetime.strptime(start_val, "%H:%M")
+            e = datetime.strptime(end_val, "%H:%M")
             hours = (e.hour * 60 + e.minute - (s.hour * 60 + s.minute)) / 60
         except ValueError:
             hours = 0.0
 
         if date_str not in days:
             days[date_str] = {"week": week_val, "sessions": [], "total": 0.0}
-        days[date_str]["sessions"].append((str(start_val).strip(), str(end_val).strip()))
+        days[date_str]["sessions"].append((start_val, end_val))
         days[date_str]["total"] += hours
 
     return days
