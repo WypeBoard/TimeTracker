@@ -3,12 +3,12 @@
 Time Tracker — logs work sessions to an Excel file.
 
 Usage:
-  python timetracker.py [start|pause|stop] [hhmm]
+  python timetracker.py [start|pause|stop|status] [hhmm]
   python timetracker.py          (interactive prompt)
 """
 
 import argparse
-from Commands import cmd_start, cmd_pause, cmd_stop
+from Commands import cmd_start, cmd_pause, cmd_stop, cmd_status
 
 
 def hhmm(value):
@@ -27,8 +27,9 @@ def prompt_command():
     print("  1) start")
     print("  2) pause")
     print("  3) stop")
-    choice = input("Enter 1, 2 or 3: ").strip()
-    command = {"1": "start", "2": "pause", "3": "stop"}.get(choice)
+    print("  4) status")
+    choice = input("Enter 1, 2, 3 or 4: ").strip()
+    command = {"1": "start", "2": "pause", "3": "stop", "4": "status"}.get(choice)
     if not command:
         print(f"Invalid choice '{choice}'.")
         return None, None
@@ -45,18 +46,22 @@ def main():
             "  python timetracker.py start 0830\n"
             "  python timetracker.py pause\n"
             "  python timetracker.py stop 1715\n"
+            "  python timetracker.py status\n"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=False)
 
     for cmd, help_text in [
-        ("start", "Clock in -- begin a new session"),
-        ("pause", "Clock out temporarily -- resume later with start"),
-        ("stop", "Clock out for the day and update the Summary sheet"),
+        ("start",  "Clock in — begin a new session"),
+        ("pause",  "Clock out temporarily — resume later with start"),
+        ("stop",   "Clock out for the day and update the Summary sheet"),
     ]:
         p = sub.add_parser(cmd, help=help_text)
         p.add_argument("time", nargs="?", type=hhmm, metavar="hhmm",
                        help="Optional time override, e.g. 0830")
+
+    sub.add_parser("status", help="Show today's sessions and estimated leave time")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -64,9 +69,13 @@ def main():
         if not command:
             return
     else:
-        command, time = args.command, args.time
+        command = args.command
+        time = getattr(args, "time", None)
 
-    {"start": cmd_start, "pause": cmd_pause, "stop": cmd_stop}[command](time)
+    if command == "status":
+        cmd_status()
+    else:
+        {"start": cmd_start, "pause": cmd_pause, "stop": cmd_stop}[command](time)
 
 
 if __name__ == "__main__":

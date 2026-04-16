@@ -1,6 +1,7 @@
 from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import FORMULAE
 
 from Constants import EXCEL_FILE, LOG_SHEET, SUM_SHEET, C_HEADER, C_ALT, C_WHITE
 from Styles import thin_border, style_cell
@@ -27,6 +28,8 @@ def create_workbook():
 
 
 def format_log_row(ws, row):
+    """Apply styling and number formats. Week formula is written here last
+    to prevent openpyxl from prefixing it with @ when the cell has a text format."""
     fill = PatternFill("solid", start_color=C_ALT) if row % 2 == 0 else None
     for col in range(1, 6):
         cell = ws.cell(row=row, column=col)
@@ -35,11 +38,11 @@ def format_log_row(ws, row):
         cell.alignment = Alignment(horizontal="center", vertical="center")
         if fill:
             cell.fill = fill
-    ws.cell(row=row, column=2).number_format = "General"  # prevent @-prefix on ISOWEEKNUM formula
-    # Force Start and End columns to plain text to avoid Excel time serial conversion
+
+    ws.cell(row=row, column=5).number_format = "0.00"
+    # Force Start/End to plain text so Excel never converts them to time serials
     ws.cell(row=row, column=3).number_format = "@"
     ws.cell(row=row, column=4).number_format = "@"
-    ws.cell(row=row, column=5).number_format = "0.00"
 
 
 def find_open_session(ws):
@@ -57,7 +60,6 @@ def _to_hhmm(val):
     if hasattr(val, "hour"):  # datetime.time or datetime.datetime
         return f"{val.hour:02d}:{val.minute:02d}"
     s = str(val).strip()
-    # Handle Excel decimal time serial (shouldn't happen after format fix, but just in case)
     try:
         f = float(s)
         total_minutes = round(f * 24 * 60)
@@ -75,7 +77,7 @@ def read_log(ws):
     days = {}
     for row in range(2, ws.max_row + 1):
         date_val = ws.cell(row=row, column=1).value
-        week_val = ws.cell(row=row, column=2).value
+        week_val = datetime.strptime(date_val, "%Y-%m-%d").isocalendar().week
         start_val = _to_hhmm(ws.cell(row=row, column=3).value)
         end_val   = _to_hhmm(ws.cell(row=row, column=4).value)
 
