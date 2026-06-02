@@ -24,16 +24,21 @@ def build_summary(wb):
     ws.freeze_panes = "A2"
 
 
-def _row_color(date_str, is_over):
-    today_str = date.today().strftime("%Y-%m-%d")
-    if date_str == today_str:
-        return C_TODAY
+def _row_color(is_over):
     return C_OVER if is_over else C_UNDER
 
 
+def _decimal_to_hhmm(hours):
+    """Convert decimal hours to HH:MM format."""
+    total_minutes = round(hours * 60)
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{h}:{m:02d}"
+
+
 def _write_daily_section(ws, days):
-    headers = ["Date", "Week", "Sessions", "Total Hours", "vs 7.40h", "Status"]
-    col_widths = [14, 8, 12, 14, 14, 14]
+    headers = ["Date", "Week", "Sessions", "Total Hours (100th)", "Total Hours (60th)", "vs 7.40h", "Status"]
+    col_widths = [14, 8, 12, 14, 16, 14, 14]
 
     for col, (h, w) in enumerate(zip(headers, col_widths), 1):
         cell = ws.cell(row=1, column=col, value=h)
@@ -49,12 +54,12 @@ def _write_daily_section(ws, days):
 
         values = [
             date_str, info["week"], len(info["sessions"]),
-            round(total, 2), f"{sign}{diff:.2f}h",
+            round(total, 2), _decimal_to_hhmm(total), f"{sign}{diff:.2f}h",
             "✅ On track" if is_over else "⚠️  Under",
         ]
         for col, val in enumerate(values, 1):
             cell = ws.cell(row=i, column=col, value=val)
-            style_cell(cell, color=_row_color(date_str, is_over),
+            style_cell(cell, color=_row_color(is_over),
                        num_fmt="0.00" if col == 4 else None)
 
 

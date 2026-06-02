@@ -5,6 +5,10 @@ from openpyxl import load_workbook
 from Constants import EXCEL_FILE, LOG_SHEET, TARGET_HOURS
 from Workbook import create_workbook, format_log_row, find_open_session, read_log
 from Summary import build_summary
+from Promark import build_promark, promark_entry
+from Printer import DayStatus, print_status, print_day_summary, print_promark_week
+
+_NO_FILE_MSG = "No timetracker file found. Run 'start' first."
 
 
 def cmd_start(time_override=None):
@@ -30,7 +34,7 @@ def cmd_start(time_override=None):
     ws.cell(row=row, column=3, value=time_str)
     ws.cell(row=row, column=4, value=None)
     ws.cell(row=row, column=5, value=f'=IF(D{row}<>"",ROUND((D{row}-C{row})*24, 2),"")')
-    format_log_row(ws, row)  # sets formats AND writes the week formula
+    format_log_row(ws, row)
 
     note = " (manually set)" if time_override else ""
     wb.save(EXCEL_FILE)
@@ -46,34 +50,77 @@ def cmd_stop(time_override=None):
     if wb is None:
         return
 
-    _print_day_summary(ws)
+    print_day_summary(_build_day_status(ws))
     print("🔄  Rebuilding Summary sheet…")
     build_summary(wb)
+    print("🔄  Rebuilding Promark sheet…")
+    build_promark(wb)
     wb.save(EXCEL_FILE)
-    print(f"✅  Done — Summary updated in the 'Summary' tab.")
+    print("✅  Done — Summary and Promark tabs updated.")
 
 
 def cmd_status():
     if not os.path.exists(EXCEL_FILE):
-        print("No timetracker file found. Run 'start' first.")
+        print(_NO_FILE_MSG)
         return
 
     wb = load_workbook(EXCEL_FILE)
     ws = wb[LOG_SHEET]
-
-    today_str = date.today().strftime("%Y-%m-%d")
     now = datetime.now()
+    print_status(_build_day_status(ws, now), now)
+
+
+def cmd_promark(week_str=None):
+    """Print a full week's Promark entries to the terminal and rebuild the Promark tab."""
+    if not os.path.exists(EXCEL_FILE):
+        print(_NO_FILE_MSG)
+        return
+
+    wb = load_workbook(EXCEL_FILE)
+    ws = wb[LOG_SHEET]
+    days = read_log(ws)
+
+    # Determine target ISO week and year
+    today_iso = date.today().isocalendar()
+    if week_str is None:
+        target_week = today_iso.week
+        target_year = today_iso.year
+    else:
+        target_week = int(week_str[1:])   # strip leading 'w'
+        target_year = today_iso.year
+
+    # Filter days belonging to that week
+    week_days = {
+        d: info for d, info in days.items()
+        if date.fromisoformat(d).isocalendar().week == target_week
+        and date.fromisoformat(d).isocalendar().year == target_year
+    }
+
+    print_promark_week(week_days, target_week, target_year)
+
+    print("🔄  Rebuilding Promark sheet…")
+    build_promark(wb)
+    wb.save(EXCEL_FILE)
+    print("✅  Promark tab updated.")
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _build_day_status(ws, now: datetime | None = None) -> DayStatus:
+    """Gather today's log data from the worksheet into a DayStatus."""
+    now = now or datetime.now()
+    today_str = date.today().strftime("%Y-%m-%d")
     days = read_log(ws)
     info = days.get(today_str)
-    open_row = find_open_session(ws)
 
-    # Hours already logged in completed sessions today
-    completed_hours = info["total"] if info else 0.0
-    completed_sessions = info["sessions"] if info else []
+    sessions = info["sessions"] if info else []
+    total_hours = info["total"] if info else 0.0
 
-    # If there's an active session, calculate its running duration
     active_start = None
     active_hours = 0.0
+    open_row = find_open_session(ws)
     if open_row:
         raw = ws.cell(row=open_row, column=3).value
         active_start = str(raw).strip() if raw else None
@@ -84,55 +131,24 @@ def cmd_status():
             except ValueError:
                 active_hours = 0.0
 
-    total_so_far = completed_hours + active_hours
-    remaining = TARGET_HOURS - total_so_far
+    pm_start, pm_end = promark_entry(sessions, total_hours) if sessions else (None, None)
 
-    print()
-    print("─" * 40)
-    print(f"  📅  {today_str}  —  🕐 {now.strftime('%H:%M')}")
-    print("─" * 40)
-
-    # Completed sessions
-    if completed_sessions:
-        print(f"  Completed sessions ({len(completed_sessions)}):")
-        for start, end in completed_sessions:
-            print(f"    {start} → {end}")
-    else:
-        print("  No completed sessions yet.")
-
-    # Active session
-    if active_start:
-        print(f"  Active session  : {active_start} → now  ({active_hours:.2f}h running)")
-    else:
-        print("  No active session.")
-
-    print()
-    print(f"  Logged so far   : {total_so_far:.2f}h  (target {TARGET_HOURS:.2f}h)")
-
-    if remaining <= 0:
-        over = -remaining
-        print(f"  ✅  Target reached — {over:.2f}h over")
-    else:
-        if active_start:
-            # Calculate leave time: how many more minutes needed from now
-            leave_minutes = now.hour * 60 + now.minute + int(remaining * 60)
-            leave_h, leave_m = divmod(leave_minutes, 60)
-            print(f"  ⏳  Remaining       : {remaining:.2f}h")
-            print(f"  🚪  Leave at        : {leave_h:02d}:{leave_m:02d}  (if session stays open)")
-        else:
-            print(f"  ⏳  Still needed    : {remaining:.2f}h  (no active session)")
-
-    print("─" * 40)
-    print()
+    return DayStatus(
+        today_str=today_str,
+        sessions=sessions,
+        total_hours=total_hours,
+        target_hours=TARGET_HOURS,
+        active_start=active_start,
+        active_hours=active_hours,
+        promark_start=pm_start,
+        promark_end=pm_end,
+    )
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 def _close_session(time_override=None):
     """Set End on the open session. Returns (wb, ws) or (None, None)."""
     if not os.path.exists(EXCEL_FILE):
-        print("No timetracker file found. Run 'start' first.")
+        print(_NO_FILE_MSG)
         return None, None
 
     wb = load_workbook(EXCEL_FILE)
@@ -153,28 +169,3 @@ def _close_session(time_override=None):
     wb.save(EXCEL_FILE)
     print(f"⏸  Closed — {date_val}  {start_val} → {time_str}{note}")
     return wb, ws
-
-
-def _print_day_summary(ws):
-    today_str = date.today().strftime("%Y-%m-%d")
-    days = read_log(ws)
-    info = days.get(today_str)
-
-    print()
-    print("─" * 40)
-    print(f"  📅  {today_str}")
-    if not info:
-        print("  No completed sessions today.")
-    else:
-        total = info["total"]
-        diff = total - TARGET_HOURS
-        is_over = diff >= 0
-        symbol = "✅" if is_over else "⚠️ "
-        sign = "+" if is_over else ""
-        print(f"  Sessions : {len(info['sessions'])}")
-        for start, end in info["sessions"]:
-            print(f"    {start} → {end}")
-        print(f"  Total    : {total:.2f}h  (target {TARGET_HOURS:.2f}h)")
-        print(f"  Delta    : {symbol} {sign}{diff:.2f}h")
-    print("─" * 40)
-    print()

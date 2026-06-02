@@ -3,12 +3,12 @@
 Time Tracker — logs work sessions to an Excel file.
 
 Usage:
-  python timetracker.py [start|pause|stop|status] [hhmm]
+  python timetracker.py [start|pause|stop|status|promark] [hhmm]
   python timetracker.py          (interactive prompt)
 """
 
 import argparse
-from Commands import cmd_start, cmd_pause, cmd_stop, cmd_status
+from Commands import cmd_start, cmd_pause, cmd_stop, cmd_status, cmd_promark
 
 
 def hhmm(value):
@@ -22,14 +22,27 @@ def hhmm(value):
     )
 
 
+def week_arg(value):
+    """Argparse type: validates 'w21' style week arguments."""
+    import re
+    if re.fullmatch(r'[wW]\d{1,2}', value):
+        n = int(value[1:])
+        if 1 <= n <= 53:
+            return f"w{n:02d}"
+    raise argparse.ArgumentTypeError(
+        f"Invalid week '{value}'. Use format wNN, e.g. w21 for week 21."
+    )
+
+
 def prompt_command():
     print("What do you want to do?")
     print("  1) start")
     print("  2) pause")
     print("  3) stop")
     print("  4) status")
-    choice = input("Enter 1, 2, 3 or 4: ").strip()
-    command = {"1": "start", "2": "pause", "3": "stop", "4": "status"}.get(choice)
+    print("  5) promark")
+    choice = input("Enter 1–5: ").strip()
+    command = {"1": "start", "2": "pause", "3": "stop", "4": "status", "5": "promark"}.get(choice)
     if not command:
         print(f"Invalid choice '{choice}'.")
         return None, None
@@ -47,6 +60,7 @@ def main():
             "  python timetracker.py pause\n"
             "  python timetracker.py stop 1715\n"
             "  python timetracker.py status\n"
+            "  python timetracker.py promark\n"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=False)
@@ -60,7 +74,11 @@ def main():
         p.add_argument("time", nargs="?", type=hhmm, metavar="hhmm",
                        help="Optional time override, e.g. 0830")
 
-    sub.add_parser("status", help="Show today's sessions and estimated leave time")
+    sub.add_parser("status",  help="Show today's sessions and estimated leave time")
+
+    p_pm = sub.add_parser("promark", help="Show what to enter in Promark (defaults to current week)")
+    p_pm.add_argument("week", nargs="?", type=week_arg, metavar="wNN",
+                      help="Week to display, e.g. w21. Defaults to the current week.")
 
     args = parser.parse_args()
 
@@ -68,14 +86,20 @@ def main():
         command, time = prompt_command()
         if not command:
             return
+        week = None
     else:
         command = args.command
         time = getattr(args, "time", None)
+        week = getattr(args, "week", None)
 
-    if command == "status":
-        cmd_status()
-    else:
-        {"start": cmd_start, "pause": cmd_pause, "stop": cmd_stop}[command](time)
+    dispatch = {
+        "start":   lambda: cmd_start(time),
+        "pause":   lambda: cmd_pause(time),
+        "stop":    lambda: cmd_stop(time),
+        "status":  lambda: cmd_status(),
+        "promark": lambda: cmd_promark(week),
+    }
+    dispatch[command]()
 
 
 if __name__ == "__main__":
