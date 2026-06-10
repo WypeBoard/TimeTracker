@@ -122,10 +122,17 @@ def print_status(status: DayStatus, now: datetime) -> None:
     elif status.active_start:
         leave_min  = now.hour * 60 + now.minute + int(remaining * 60)
         leave_h, leave_m = divmod(leave_min, 60)
-        rows.append(Text.from_markup(
+        leave_line = (
             f"\n  [{_C_WARN}]⏳  Remaining [bold]{remaining:.2f}h[/bold][/{_C_WARN}]"
             f"   [cyan]🚪  Leave at [bold]{leave_h:02d}:{leave_m:02d}[/bold][/cyan]"
-        ))
+        )
+        if not status.sessions:  # only this one active session — show lunch variant
+            lunch_min  = leave_min + 30
+            lunch_h, lunch_m = divmod(lunch_min, 60)
+            leave_line += (
+                f"   [dim]([/dim][magenta]with lunch [bold]{lunch_h:02d}:{lunch_m:02d}[/bold][/magenta][dim])[/dim]"
+            )
+        rows.append(Text.from_markup(leave_line))
     else:
         rows.append(Text.from_markup(
             f"\n  [{_C_WARN}]⏳  Still needed [bold]{remaining:.2f}h[/bold]"
