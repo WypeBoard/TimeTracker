@@ -1,6 +1,7 @@
 import os
 
-EXCEL_FILE = os.path.join(os.path.expanduser("~"), "timetracker.xlsx")
+EXCEL_FILE = os.path.join(os.path.expanduser("~"), "timetracker_dev.xlsx")
+# EXCEL_FILE = os.path.join(os.path.expanduser("~"), "timetracker.xlsx")  # production
 TARGET_HOURS = 7.4
 LOG_SHEET = "Time Log"
 SUM_SHEET = "Summary"
