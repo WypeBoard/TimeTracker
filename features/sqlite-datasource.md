@@ -1,6 +1,6 @@
-# Feature: Replace Excel with a Structured Datasource
+# Feature: Replace Excel with SQLite
 
-Status: Brainstorming
+Status: Approved
 
 ## Purpose
 
@@ -44,7 +44,144 @@ separates raw data from presentation.
 
 ## Manual Changes
 
-*(None yet — initial brainstorm.)*
+### 2026-06-15
+
+**SQLite chosen as the datasource.**
+
+After evaluating all options (JSON, SQLite, TOML, CSV), SQLite is the selected
+approach. The primary driver is robustness: ACID transactions eliminate the
+need for a manual temp-file/rename pattern, and SQL querying will facilitate
+other planned features (TUI, reporting, filtering) better than loading an
+entire JSON file on every operation.
+
+The hand-editability trade-off (losing plain-text editing) is accepted. The
+`log` and `promark` CLI commands already provide readable views of the data.
+
+Previous brainstorming text and option comparisons below are kept for historical
+context but are superseded by this decision.
+
+---
+
+**Preferred abstraction style.**
+
+Direct `sqlite3` calls must not be scattered across the codebase. A layered
+connector pattern is required, modelled on the following structure:
+
+```
+db/
+    __init__.py
+    query_type.py   — QueryType enum (READ / WRITE)
+    connection.py   — SQLite context manager
+    repository.py   — generic query helpers (persist, fetch_one, fetch_many)
+Storage.py          — domain layer: session-specific queries and schema setup
+```
+
+**`db/query_type.py`** — controls whether `commit()` is called after a block:
+
+```python
+from enum import Enum, auto
+
+class QueryType(Enum):
+    READ  = auto()   # SELECT — no commit
+    WRITE = auto()   # INSERT / UPDATE / DELETE — commits on exit
+```
+
+**`db/connection.py`** — context manager; yields a cursor and handles
+commit/close automatically:
+
+```python
+import sqlite3
+from db.query_type import QueryType
+
+class Connection:
+
+    def __init__(self, query_type: QueryType, file: str):
+        self.file = file
+        self.query_type = query_type
+        self._conn = None
+
+    def __enter__(self):
+        self._conn = sqlite3.connect(self.file)
+        return self._conn.cursor()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._conn:
+            if self.query_type == QueryType.WRITE and exc_type is None:
+                self._conn.commit()
+            self._conn.close()
+```
+
+**`db/repository.py`** — generic helpers that accept SQL strings and params,
+keeping all `Connection` usage in one place:
+
+```python
+from typing import Any
+from db.connection import Connection
+from db.query_type import QueryType
+
+def execute(query: str, params: tuple[Any, ...] = ()) -> None:
+    """Run a WRITE query (INSERT / UPDATE / DELETE)."""
+    with Connection(QueryType.WRITE, DB_FILE) as cur:
+        cur.execute(query, params)
+
+def fetch_one(query: str, params: tuple[Any, ...] = ()) -> tuple | None:
+    ...
+
+def fetch_many(query: str, params: tuple[Any, ...] = ()) -> list[tuple]:
+    ...
+```
+
+> The `DB_FILE` path will be passed in or resolved from `Constants.py`; the
+> exact wiring is left to implementation.
+
+**`Storage.py`** — session-domain layer. Exposes named functions used by
+`Commands.py`:
+
+```python
+def create_schema() -> None: ...
+def open_session(date: str, start: str, task: str) -> None: ...
+def close_session(session_id: int, end: str) -> None: ...
+def get_open_session() -> tuple | None: ...
+def get_today_sessions() -> list[tuple]: ...
+def read_log() -> dict: ...          # same shape as current Workbook.read_log()
+```
+
+`Commands.py` only calls `Storage.py` functions — it never touches `db/`
+directly.
+
+---
+
+**File location — resolved 2026-06-15.**
+
+The application runs on Windows only. The database will be placed in the
+user's `%APPDATA%` directory, which is the Windows-conventional location for
+per-user application data:
+
+```
+%APPDATA%\TimeTracker\timetracker.db
+```
+
+Resolved in Python as:
+
+```python
+import os
+
+DB_FILE = os.path.join(os.environ["APPDATA"], "TimeTracker", "timetracker.db")
+```
+
+The `TimeTracker` subdirectory must be created if it does not exist
+(`os.makedirs(..., exist_ok=True)`) before the first database connection is
+opened. This is handled once inside `create_schema()`.
+
+---
+
+**Out-of-scope decisions (accepted):**
+
+- Migration from `.xlsx` is a separate follow-up feature, not part of this
+  implementation.
+- Single file for all years (no per-year splitting).
+- `Summary.py` and `Styles.py` will be removed — their functionality is
+  already covered by terminal commands.
 
 ---
 
@@ -224,23 +361,19 @@ does not need to be part of the initial implementation.
 
 ---
 
-### Open questions for design approval
+### Open questions (remaining)
 
-1. **JSON vs SQLite** — Which trade-off matters more: hand-editability (JSON)
-   or robustness without a temp-file pattern (SQLite)?
+*(None — all questions resolved. Feature is approved for implementation.)*
 
-2. **File location** — Should the new file live in `~` like the current `.xlsx`,
-   or move to a more conventional path such as `~/.local/share/timetracker/`?
+### Closed questions
 
-3. **Summary and Promark sheets** — Once Excel is removed these sheets disappear.
-   Is that acceptable, given that `log` and `promark` commands already cover the
-   same information in the terminal?
-
-4. **Migration** — Should a migration utility be in scope for this feature, or
-   treated as a separate follow-up?
-
-5. **Single file vs. per-year files** — Keep all sessions in one file, or split
-   by year (e.g. `timetracker-2026.json`)?
+| # | Question | Resolution |
+|---|---|---|
+| 1 | JSON vs SQLite | **SQLite** — 2026-06-15 |
+| 2 | File location | **`%APPDATA%\TimeTracker\timetracker.db`** — 2026-06-15 |
+| 3 | Remove Summary/Promark sheets | **Accepted** — CLI commands cover the same information |
+| 4 | Migration in scope? | **No** — separate follow-up feature |
+| 5 | Single file vs per-year | **Single file** |
 
 ---
 
