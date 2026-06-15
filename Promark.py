@@ -28,7 +28,7 @@ def promark_entry(sessions, total_hours):
     if not sessions:
         return None, None
 
-    first_start = _parse_hhmm(sessions[0][0])
+    first_start = _parse_hhmm(sessions[0][0])  # sessions are (start, end, task)
     total_minutes = round(total_hours * 60)
     promark_end = first_start + timedelta(minutes=total_minutes + LUNCH_MINUTES)
     return _fmt_hhmm(first_start), _fmt_hhmm(promark_end)
@@ -87,7 +87,7 @@ def _write_promark_section(ws, days):
 
         # Build a human-readable note
         session_parts = " + ".join(
-            f"{s}→{e}" for s, e in sessions
+            f"{s}→{e}" for s, e, *_ in sessions
         )
         n_sessions = len(sessions)
         if n_sessions == 1:

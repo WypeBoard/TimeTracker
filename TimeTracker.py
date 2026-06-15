@@ -3,12 +3,13 @@
 Time Tracker — logs work sessions to an Excel file.
 
 Usage:
-  python timetracker.py [start|pause|stop|status|promark] [hhmm]
-  python timetracker.py          (interactive prompt)
+  python TimeTracker.py [start|pause|stop|restart|status|task|log|promark] [args]
+  python TimeTracker.py          (interactive prompt)
 """
 
 import argparse
-from Commands import cmd_start, cmd_pause, cmd_stop, cmd_status, cmd_promark
+import re
+from Commands import cmd_start, cmd_pause, cmd_stop, cmd_restart, cmd_status, cmd_task, cmd_log, cmd_promark
 
 
 def hhmm(value):
@@ -24,7 +25,6 @@ def hhmm(value):
 
 def week_arg(value):
     """Argparse type: validates 'w21' style week arguments."""
-    import re
     if re.fullmatch(r'[wW]\d{1,2}', value):
         n = int(value[1:])
         if 1 <= n <= 53:
@@ -34,19 +34,42 @@ def week_arg(value):
     )
 
 
+def _parse_start_args(raw_args):
+    """Parse the variadic args for 'start': optional hhmm + optional epic."""
+    time_override = None
+    epic = None
+    args = list(raw_args)
+    if args and re.fullmatch(r'\d{4}', args[0]):
+        val = args.pop(0)
+        h, m = int(val[:2]), int(val[2:])
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            time_override = f"{h:02d}:{m:02d}"
+        else:
+            print(f"⚠  Invalid time '{val}' — ignoring.")
+    if args:
+        epic = " ".join(args)
+    return time_override, epic
+
+
 def prompt_command():
     print("What do you want to do?")
     print("  1) start")
     print("  2) pause")
     print("  3) stop")
-    print("  4) status")
-    print("  5) promark")
-    choice = input("Enter 1–5: ").strip()
-    command = {"1": "start", "2": "pause", "3": "stop", "4": "status", "5": "promark"}.get(choice)
+    print("  4) restart")
+    print("  5) status")
+    print("  6) task")
+    print("  7) log")
+    print("  8) promark")
+    choice = input("Enter 1–8: ").strip()
+    command = {
+        "1": "start", "2": "pause", "3": "stop", "4": "restart",
+        "5": "status", "6": "task", "7": "log", "8": "promark",
+    }.get(choice)
     if not command:
         print(f"Invalid choice '{choice}'.")
-        return None, None
-    return command, None
+        return None
+    return command
 
 
 def main():
@@ -55,51 +78,110 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python timetracker.py start\n"
-            "  python timetracker.py start 0830\n"
-            "  python timetracker.py pause\n"
-            "  python timetracker.py stop 1715\n"
-            "  python timetracker.py status\n"
-            "  python timetracker.py promark\n"
+            "  python TimeTracker.py start\n"
+            "  python TimeTracker.py start 0830\n"
+            "  python TimeTracker.py start Epic-42\n"
+            "  python TimeTracker.py start 0830 Epic-42\n"
+            "  python TimeTracker.py restart\n"
+            "  python TimeTracker.py pause\n"
+            "  python TimeTracker.py stop 1715\n"
+            "  python TimeTracker.py status\n"
+            "  python TimeTracker.py task Epic-42\n"
+            "  python TimeTracker.py task Epic-42 -s 2\n"
+            "  python TimeTracker.py log\n"
+            "  python TimeTracker.py log w23\n"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=False)
 
+    # start — variadic to handle optional hhmm + optional epic
+    p_start = sub.add_parser("start", help="Clock in — begin a new session")
+    p_start.add_argument("args", nargs="*", metavar="[hhmm] [epic]",
+                         help="Optional time (4-digit hhmm) and/or task/epic ID")
+
+    # pause / stop — optional time override
     for cmd, help_text in [
-        ("start",  "Clock in — begin a new session"),
-        ("pause",  "Clock out temporarily — resume later with start"),
-        ("stop",   "Clock out for the day and update the Summary sheet"),
+        ("pause", "Clock out temporarily — resume later with start"),
+        ("stop",  "Clock out for the day and update the Summary sheet"),
     ]:
         p = sub.add_parser(cmd, help=help_text)
         p.add_argument("time", nargs="?", type=hhmm, metavar="hhmm",
                        help="Optional time override, e.g. 0830")
 
-    sub.add_parser("status",  help="Show today's sessions and estimated leave time")
+    # restart — optional time override
+    p_restart = sub.add_parser("restart", help="Close session and reopen, carrying epic forward")
+    p_restart.add_argument("time", nargs="?", type=hhmm, metavar="hhmm",
+                           help="Optional time override, e.g. 1015")
 
-    p_pm = sub.add_parser("promark", help="Show what to enter in Promark (defaults to current week)")
+    sub.add_parser("status", help="Show today's sessions and estimated leave time")
+
+    # task — required epic, optional -s N
+    p_task = sub.add_parser("task", help="Tag current or specified session with a task/epic ID")
+    p_task.add_argument("epic", metavar="epic", help="Task/epic ID, e.g. Epic-42")
+    p_task.add_argument("-s", dest="session_num", type=int, metavar="N",
+                        help="Target session number for today (default: current/last)")
+
+    # log — optional week
+    p_log = sub.add_parser("log", help="Show full week log with task labels (default: current week)")
+    p_log.add_argument("week", nargs="?", type=week_arg, metavar="wNN",
+                       help="Week to display, e.g. w23. Defaults to the current week.")
+
+    # promark — kept for backward compatibility
+    p_pm = sub.add_parser("promark", help="Show Promark entries (defaults to current week)")
     p_pm.add_argument("week", nargs="?", type=week_arg, metavar="wNN",
                       help="Week to display, e.g. w21. Defaults to the current week.")
 
     args = parser.parse_args()
 
     if not args.command:
-        command, time = prompt_command()
+        command = prompt_command()
         if not command:
             return
-        week = None
-    else:
-        command = args.command
-        time = getattr(args, "time", None)
-        week = getattr(args, "week", None)
+        # Interactive: run without extra args
+        dispatch_interactive(command)
+        return
 
-    dispatch = {
-        "start":   lambda: cmd_start(time),
-        "pause":   lambda: cmd_pause(time),
-        "stop":    lambda: cmd_stop(time),
-        "status":  lambda: cmd_status(),
-        "promark": lambda: cmd_promark(week),
-    }
-    dispatch[command]()
+    command = args.command
+
+    if command == "start":
+        time_override, epic = _parse_start_args(getattr(args, "args", []))
+        cmd_start(time_override, epic)
+    elif command == "pause":
+        cmd_pause(getattr(args, "time", None))
+    elif command == "stop":
+        cmd_stop(getattr(args, "time", None))
+    elif command == "restart":
+        cmd_restart(getattr(args, "time", None))
+    elif command == "status":
+        cmd_status()
+    elif command == "task":
+        cmd_task(args.epic, args.session_num)
+    elif command == "log":
+        cmd_log(getattr(args, "week", None))
+    elif command == "promark":
+        cmd_promark(getattr(args, "week", None))
+
+
+def dispatch_interactive(command):
+    """Run a command chosen via the interactive prompt (no extra args)."""
+    if command == "start":
+        cmd_start()
+    elif command == "pause":
+        cmd_pause()
+    elif command == "stop":
+        cmd_stop()
+    elif command == "restart":
+        cmd_restart()
+    elif command == "status":
+        cmd_status()
+    elif command == "task":
+        epic = input("Epic/task ID: ").strip()
+        if epic:
+            cmd_task(epic)
+    elif command == "log":
+        cmd_log()
+    elif command == "promark":
+        cmd_promark()
 
 
 if __name__ == "__main__":

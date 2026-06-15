@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from rich.console import Console, Group
@@ -23,11 +23,12 @@ _C_PROMARK = "medium_orchid"
 @dataclass
 class DayStatus:
     today_str: str
-    sessions: list[tuple[str, str]]   # completed (start, end) pairs
-    total_hours: float                 # sum of completed sessions
+    sessions: list[tuple[str, str, str]]   # completed (start, end, task) triples
+    total_hours: float                      # sum of completed sessions
     target_hours: float
     active_start: str | None = None
     active_hours: float = 0.0
+    active_task: str | None = None
     promark_start: str | None = None
     promark_end: str | None = None
 
@@ -61,9 +62,11 @@ def _session_hours(start: str, end: str) -> float:
 
 
 def _sessions_table(
-    sessions: list[tuple[str, str]],
+    sessions: list[tuple[str, str, str]],
     active_start: str | None = None,
     active_hours: float = 0.0,
+    active_task: str | None = None,
+    start_index: int = 1,
 ) -> Table:
     table = Table(
         box=box.SIMPLE,
@@ -72,19 +75,24 @@ def _sessions_table(
         padding=(0, 1),
         show_edge=False,
     )
+    table.add_column("#",      style="dim",   no_wrap=True)
     table.add_column("Start",  style="cyan",  no_wrap=True)
     table.add_column("End",    style="cyan",  no_wrap=True)
     table.add_column("Hours",  justify="right", no_wrap=True)
+    table.add_column("Task",   style="magenta", no_wrap=True)
 
-    for start, end in sessions:
+    for i, (start, end, task) in enumerate(sessions, start=start_index):
         h = _session_hours(start, end)
-        table.add_row(start, end, f"{h:.2f}h")
+        table.add_row(f"#{i}", start, end, f"{h:.2f}h", task or "")
 
     if active_start:
+        n = start_index + len(sessions)
         table.add_row(
+            f"[{_C_ACTIVE}]#{n}[/{_C_ACTIVE}]",
             f"[{_C_ACTIVE}]{active_start}[/{_C_ACTIVE}]",
             f"[{_C_ACTIVE}]now ▶[/{_C_ACTIVE}]",
             f"[{_C_ACTIVE}]{active_hours:.2f}h[/{_C_ACTIVE}]",
+            f"[{_C_ACTIVE}]{active_task or ''}[/{_C_ACTIVE}]",
         )
 
     return table
@@ -103,7 +111,12 @@ def print_status(status: DayStatus, now: datetime) -> None:
     rows: list = []
 
     if status.sessions or status.active_start:
-        rows.append(_sessions_table(status.sessions, status.active_start, status.active_hours))
+        rows.append(_sessions_table(
+            status.sessions,
+            status.active_start,
+            status.active_hours,
+            status.active_task,
+        ))
     else:
         rows.append(Text("No sessions today.", style=_C_DIM))
 
@@ -172,12 +185,72 @@ def print_day_summary(status: DayStatus) -> None:
     console.print()
 
 
+def print_log_week(week_days: dict, week_num: int, year: int) -> None:
+    """Print a full week's sessions (with task labels) and daily/weekly totals."""
+    # Resolve the Monday of the target ISO week.
+    jan4 = date(year, 1, 4)
+    week1_monday = jan4 - timedelta(days=jan4.weekday())
+    monday = week1_monday + timedelta(weeks=week_num - 1)
+
+    title = (
+        f"📅  Week {week_num}, {year}"
+        f"  [dim]({monday.strftime('%b %d')} – {(monday + timedelta(days=4)).strftime('%b %d')})[/dim]"
+    )
+
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    today_str = date.today().strftime("%Y-%m-%d")
+    week_total = 0.0
+    rows: list = []
+
+    for i in range(5):
+        d = monday + timedelta(days=i)
+        date_str = d.strftime("%Y-%m-%d")
+        day_label = day_names[i]
+        info = week_days.get(date_str)
+        is_today = date_str == today_str
+
+        day_style = "bold" if is_today else ""
+        label_text = Text(f"  {day_label}  ", style=day_style or "dim")
+
+        if info:
+            sessions = info["sessions"]
+            day_total = info["total"]
+            week_total += day_total
+
+            for j, (start, end, task) in enumerate(sessions):
+                h = _session_hours(start, end)
+                prefix = label_text if j == 0 else Text("         ")
+                line = Text.assemble(
+                    prefix,
+                    (f"#{j+1} ", "dim"),
+                    (f"{start}–{end}", "cyan"),
+                    (f"  {h:.2f}h", "bold"),
+                    (f"  {task}" if task else "", "magenta"),
+                )
+                rows.append(line)
+
+            # Daily total on its own line if more than one session
+            if len(sessions) > 1:
+                rows.append(Text.from_markup(
+                    f"           [dim]daily total[/dim]  [bold]{day_total:.2f}h[/bold]"
+                ))
+        else:
+            rows.append(Text.assemble(label_text, ("—", "dim")))
+
+    rows.append(Text(""))
+    rows.append(Text.from_markup(
+        f"  [bold]Week total:[/bold]  [bold cyan]{week_total:.2f}h[/bold cyan]"
+    ))
+
+    console.print(Panel(Group(*rows), title=title, border_style=_C_PROMARK, padding=(0, 2)))
+    console.print()
+
+
 def print_promark_week(week_days: dict, week_num: int, year: int) -> None:
     """Print Mon–Fri Promark entries for the given ISO week as a rich table."""
     from Promark import promark_entry
 
     # Resolve the Monday of the target ISO week.
-    # ISO rule: Jan 4 is always in week 1.
     jan4 = date(year, 1, 4)
     week1_monday = jan4 - timedelta(days=jan4.weekday())
     monday = week1_monday + timedelta(weeks=week_num - 1)
