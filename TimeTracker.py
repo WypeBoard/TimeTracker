@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Time Tracker — logs work sessions to an Excel file.
+Time Tracker — logs work sessions to a SQLite database.
 
 Usage:
   python TimeTracker.py [start|pause|stop|restart|status|task|log|promark] [args]
@@ -10,6 +10,7 @@ Usage:
 import argparse
 import re
 from Commands import cmd_start, cmd_pause, cmd_stop, cmd_restart, cmd_status, cmd_task, cmd_log, cmd_promark
+from Storage import create_schema
 
 
 def hhmm(value):
@@ -73,8 +74,12 @@ def prompt_command():
 
 
 def main():
+    # Ensure the database directory, tables, and triggers exist before any
+    # command runs. Safe to call on every startup — all DDL uses IF NOT EXISTS.
+    create_schema()
+
     parser = argparse.ArgumentParser(
-        description="Time tracker — logs work sessions to an Excel file.",
+        description="Time tracker — logs work sessions to a SQLite database.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
@@ -90,6 +95,8 @@ def main():
             "  python TimeTracker.py task Epic-42 -s 2\n"
             "  python TimeTracker.py log\n"
             "  python TimeTracker.py log w23\n"
+            "  python TimeTracker.py promark\n"
+            "  python TimeTracker.py promark w23\n"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=False)

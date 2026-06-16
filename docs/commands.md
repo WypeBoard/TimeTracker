@@ -2,27 +2,30 @@
 
 ## Purpose
 
-TimeTracker is a one-shot CLI tool that logs work sessions to an Excel file
-(`timetracker.xlsx`).  Every command is a single `python TimeTracker.py <command>`
-call — Python starts, does its thing, and exits.  There is no persistent process.
+TimeTracker is a one-shot CLI tool that logs work sessions to a SQLite
+database (`%APPDATA%\TimeTracker\timetracker.db`). Every command is a single
+`python TimeTracker.py <command>` call — Python starts, does its thing, and
+exits. There is no persistent process.
 
 ---
 
 ## Current Behaviour
 
-### Data shape — Time Log sheet
+### Data shape
 
-| Col | Header     | Type         | Notes                                   |
-|-----|------------|--------------|-----------------------------------------|
-| A   | Date       | Date string  | `YYYY-MM-DD`                            |
-| B   | Week       | Integer      | ISO week number (Excel `WEEKNUM` formula) |
-| C   | Start      | Time string  | `HH:MM` plain text                      |
-| D   | End        | Time string  | `HH:MM` plain text; empty while running |
-| E   | Hours      | Decimal      | Computed by Excel formula               |
-| F   | Task/Epic  | Plain text   | Short ID such as `Epic-42`; optional    |
+Each work session is one row in the `sessions` table:
 
-**Single source of truth is the Excel file.** No sidecar files, no separate sheets.
-Workbooks that pre-date column F have the header added automatically on first run.
+| Column  | Type        | Notes                                      |
+|---------|-------------|--------------------------------------------|
+| `id`    | Integer     | Auto-incremented primary key               |
+| `date`  | Text        | `YYYY-MM-DD` (local date)                  |
+| `start` | Text        | `HH:MM` (local time)                       |
+| `end`   | Text / NULL | `HH:MM`; NULL while the session is running |
+| `task`  | Text        | Short ID such as `Epic-42`; empty if unset |
+
+Week numbers are derived from `date` at query time via `datetime.isocalendar()`
+and are not stored. An open session is one where `end IS NULL`; at most one
+open session should exist at a time.
 
 ---
 
@@ -30,8 +33,8 @@ Workbooks that pre-date column F have the header added automatically on first ru
 
 ### `start [hhmm] [epic]`
 
-Opens a new session row.  Both arguments are optional and can be combined in any order,
-except that the time (if given) must come before the epic.
+Opens a new session. Both arguments are optional and can be combined in any
+order, except that the time (if given) must come before the epic.
 
 ```
 python TimeTracker.py start
@@ -40,9 +43,9 @@ python TimeTracker.py start Epic-42
 python TimeTracker.py start 0830 Epic-42
 ```
 
-- `hhmm` — four-digit time override (e.g. `0830` → `08:30`).  Defaults to `now`.
-- `epic` — task/epic ID written straight to column F.  If omitted, F is left blank and
-  can be filled later with `task`.
+- `hhmm` — four-digit time override (e.g. `0830` → `08:30`). Defaults to `now`.
+- `epic` — task/epic ID. If omitted, task is left blank and can be filled
+  later with `task`.
 
 Output examples:
 
@@ -55,8 +58,8 @@ Output examples:
 
 ### `pause [hhmm]`
 
-Closes the current session without rebuilding the Summary or Promark sheets.
-Use this for short breaks when you intend to continue later.
+Closes the current session. Use this for short breaks when you intend to
+continue later.
 
 ```
 python TimeTracker.py pause
@@ -67,23 +70,21 @@ python TimeTracker.py pause 1015
 
 ### `stop [hhmm]`
 
-Closes the current session **and** rebuilds the Summary and Promark Excel sheets.
-Use this at the end of the working day.
+Closes the current session and prints a day summary panel. Use this at the
+end of the working day.
 
 ```
 python TimeTracker.py stop
 python TimeTracker.py stop 1715
 ```
 
-After closing it prints a day summary panel, then rebuilds both sheets.
-
 ---
 
 ### `restart [hhmm]`
 
-Closes the running session and immediately opens a new one, carrying the Task/Epic value
-of the previous session forward.  Useful for returning from a break without retyping the
-epic.
+Closes the running session and immediately opens a new one, carrying the
+Task/Epic value of the previous session forward. Useful for returning from a
+break without retyping the epic.
 
 ```
 python TimeTracker.py restart
@@ -101,8 +102,8 @@ Output:
 
 ### `status`
 
-Displays today's sessions (numbered `#1`, `#2`, …) with task labels, a progress bar,
-and an estimated leave time.
+Displays today's sessions (numbered `#1`, `#2`, …) with task labels, a
+progress bar, and an estimated leave time.
 
 ```
 python TimeTracker.py status
@@ -125,14 +126,14 @@ Output example:
 
 ### `task <epic> [-s N]`
 
-Tags a session row with a Task/Epic ID (column F).
+Tags a session with a Task/Epic ID.
 
 ```
 python TimeTracker.py task Epic-42
 python TimeTracker.py task Epic-11 -s 2
 ```
 
-- Without `-s` — targets the currently open session; falls back to the last closed
+- Without `-s` — targets the currently open session; falls back to the last
   session for today.
 - `-s N` — targets session number N (1-indexed) for today.
 
@@ -146,8 +147,8 @@ Output:
 
 ### `log [wNN]`
 
-Prints a full week of sessions with task labels, daily totals, and a week total.
-Defaults to the current week; `wNN` selects a specific ISO week number.
+Prints a full week of sessions with task labels, daily totals, and a week
+total. Defaults to the current week; `wNN` selects a specific ISO week number.
 
 ```
 python TimeTracker.py log
@@ -170,23 +171,21 @@ Output example:
 ╰───────────────────────────────────────────────────────────────╯
 ```
 
-> **Year-boundary note:** `wNN` is resolved against the current year.  Week 1 at the
-> turn of the year may be ambiguous.  This is a known edge case to be handled later.
+> **Year-boundary note:** `wNN` is resolved against the current year. Week 1
+> at the turn of the year may be ambiguous. This is a known edge case.
 
 ---
 
 ### `promark [wNN]`
 
-Kept for backward compatibility.  Prints the Promark-style (single start/end per day)
-table and also rebuilds the Promark Excel sheet.
+Prints the Promark-style table (single consolidated start/end per day,
+including a 30-minute lunch offset). Defaults to the current week; `wNN`
+selects a specific ISO week number.
 
 ```
 python TimeTracker.py promark
 python TimeTracker.py promark w23
 ```
-
-Prefer `log` for daily use; `promark` is mainly useful when you need to force-rebuild
-the Promark tab.
 
 ---
 
@@ -201,27 +200,27 @@ What do you want to do?
 Enter 1–8:
 ```
 
-Commands that require arguments (e.g. `task` asks for the epic interactively) are
-supported; time overrides are not available through the interactive prompt.
+Commands that require arguments (e.g. `task` asks for the epic interactively)
+are supported; time overrides are not available through the interactive prompt.
 
 ---
 
 ## Limitations
 
-- `wNN` week selection always uses the current year — year-boundary ambiguity is not yet
-  handled.
-- Weekend sessions (Saturday, Sunday) are stored in the log but `log` only displays
-  Mon–Fri.
+- `wNN` week selection always uses the current year — year-boundary ambiguity
+  is not yet handled.
+- Weekend sessions (Saturday, Sunday) are stored in the database but `log`
+  only displays Mon–Fri.
 - The interactive prompt does not support time overrides.
 
 ---
 
 ## Notes
 
-- Column F is auto-migrated on first run for workbooks that pre-date it.
-- `restart` always carries the Task/Epic of the *previous* session; there is no flag to
-  override the carried epic in the same call (use `task` afterwards if needed).
-- One task per session row is by design.  For genuine task switches use
+- `restart` always carries the Task/Epic of the *previous* session; there is
+  no flag to override the carried epic in the same call (use `task`
+  afterwards if needed).
+- One task per session is by design. For genuine task switches use
   `pause` → `start <epic>` or `restart` followed by `task`.
 
 ---
@@ -229,3 +228,4 @@ supported; time overrides are not available through the interactive prompt.
 ## Related Features
 
 - `features/commands.md` — original design document
+- `docs/sqlite-datasource.md` — database schema and storage layer

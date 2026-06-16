@@ -1,47 +1,27 @@
-import os
 from datetime import datetime, date
-from openpyxl import load_workbook
 
-from Constants import EXCEL_FILE, LOG_SHEET, TARGET_HOURS
-from Workbook import (
-    create_workbook, ensure_task_column, format_log_row,
-    find_open_session, find_today_rows, read_log,
+from Constants import TARGET_HOURS
+from Storage import (
+    open_session, close_session, update_session_task,
+    get_open_session, get_today_sessions, read_log,
 )
-from Summary import build_summary
-from Promark import build_promark, promark_entry
+from Promark import promark_entry
 from Printer import DayStatus, print_status, print_day_summary, print_promark_week, print_log_week
-
-_NO_FILE_MSG = "No timetracker file found. Run 'start' first."
 
 
 def cmd_start(time_override=None, epic=None):
-    if not os.path.exists(EXCEL_FILE):
-        create_workbook()
-
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb[LOG_SHEET]
-    ensure_task_column(ws)
-
-    open_row = find_open_session(ws)
-    if open_row:
-        t = ws.cell(row=open_row, column=3).value
-        print(f"⚠  Session already running since {t}. Use 'pause' or 'stop' first.")
+    open_sess = get_open_session()
+    if open_sess:
+        _id, _date, start, _task = open_sess
+        print(f"⚠  Session already running since {start}. Use 'pause' or 'stop' first.")
         return
 
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     time_str = time_override or now.strftime("%H:%M")
-    row = ws.max_row + 1
 
-    ws.cell(row=row, column=1, value=date_str)
-    ws.cell(row=row, column=2, value=f'=WEEKNUM(A{row})')
-    ws.cell(row=row, column=3, value=time_str)
-    ws.cell(row=row, column=4, value=None)
-    ws.cell(row=row, column=5, value=f'=IF(D{row}<>"",ROUND((D{row}-C{row})*24, 2),"")')
-    ws.cell(row=row, column=6, value=epic or "")
-    format_log_row(ws, row)
+    open_session(date_str, time_str, epic or "")
 
-    wb.save(EXCEL_FILE)
     epic_suffix = f" — {epic}" if epic else ""
     note = " (manually set)" if time_override else ""
     print(f"▶  Started at {time_str}{epic_suffix}{note}")
@@ -49,45 +29,26 @@ def cmd_start(time_override=None, epic=None):
 
 def cmd_restart(time_override=None):
     """Close the current session and open a new one, carrying the epic forward."""
-    if not os.path.exists(EXCEL_FILE):
-        print(_NO_FILE_MSG)
-        return
-
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb[LOG_SHEET]
-    ensure_task_column(ws)
-
-    open_row = find_open_session(ws)
-    if not open_row:
+    open_sess = get_open_session()
+    if not open_sess:
         print("No open session found. Run 'start' first.")
         return
 
-    # Read data from the open session before closing it
-    start_val = ws.cell(row=open_row, column=3).value
-    task_val = str(ws.cell(row=open_row, column=6).value or "").strip()
-    today_rows = find_today_rows(ws)
-    session_num = today_rows.index(open_row) + 1 if open_row in today_rows else "?"
+    sess_id, _date, start_val, task_val = open_sess
+
+    # Find the position of this session in today's list (for the printout)
+    today_sessions = get_today_sessions()  # [(id, start, end, task)]
+    today_ids = [s[0] for s in today_sessions]
+    session_num = today_ids.index(sess_id) + 1 if sess_id in today_ids else "?"
 
     time_str = time_override or datetime.now().strftime("%H:%M")
-    ws.cell(row=open_row, column=4, value=time_str)
-    wb.save(EXCEL_FILE)
+    close_session(sess_id, time_str)
     print(f"⏸  Closed #{session_num} — {start_val} → {time_str}")
 
     # Open a new session carrying the task forward
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb[LOG_SHEET]
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
-    row = ws.max_row + 1
-
-    ws.cell(row=row, column=1, value=date_str)
-    ws.cell(row=row, column=2, value=f'=WEEKNUM(A{row})')
-    ws.cell(row=row, column=3, value=time_str)
-    ws.cell(row=row, column=4, value=None)
-    ws.cell(row=row, column=5, value=f'=IF(D{row}<>"",ROUND((D{row}-C{row})*24, 2),"")')
-    ws.cell(row=row, column=6, value=task_val)
-    format_log_row(ws, row)
-    wb.save(EXCEL_FILE)
+    open_session(date_str, time_str, task_val)
 
     new_num = session_num + 1 if isinstance(session_num, int) else "?"
     carry_note = f"  {task_val}  (carried forward)" if task_val else ""
@@ -99,80 +60,53 @@ def cmd_pause(time_override=None):
 
 
 def cmd_stop(time_override=None):
-    wb, ws = _close_session(time_override)
-    if wb is None:
+    closed = _close_session(time_override)
+    if not closed:
         return
-
-    print_day_summary(_build_day_status(ws))
-    print("🔄  Rebuilding Summary sheet…")
-    build_summary(wb)
-    print("🔄  Rebuilding Promark sheet…")
-    build_promark(wb)
-    wb.save(EXCEL_FILE)
-    print("✅  Done — Summary and Promark tabs updated.")
+    print_day_summary(_build_day_status())
 
 
 def cmd_status():
-    if not os.path.exists(EXCEL_FILE):
-        print(_NO_FILE_MSG)
-        return
-
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb[LOG_SHEET]
     now = datetime.now()
-    print_status(_build_day_status(ws, now), now)
+    print_status(_build_day_status(now), now)
 
 
 def cmd_task(epic, session_num=None):
-    """Tag a session row with a Task/Epic ID."""
-    if not os.path.exists(EXCEL_FILE):
-        print(_NO_FILE_MSG)
-        return
-
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb[LOG_SHEET]
-    ensure_task_column(ws)
-
-    today_rows = find_today_rows(ws)
-    if not today_rows:
+    """Tag a session with a Task/Epic ID."""
+    today_sessions = get_today_sessions()  # [(id, start, end, task)]
+    if not today_sessions:
         print("No sessions found for today.")
         return
 
     if session_num is not None:
-        # -s N selects the Nth session (1-indexed)
         idx = session_num - 1
-        if idx < 0 or idx >= len(today_rows):
-            print(f"⚠  Session #{session_num} not found. Today has {len(today_rows)} session(s).")
+        if idx < 0 or idx >= len(today_sessions):
+            print(f"⚠  Session #{session_num} not found. Today has {len(today_sessions)} session(s).")
             return
-        target_row = today_rows[idx]
+        target = today_sessions[idx]
     else:
-        # Default: last open session, or last closed session
-        open_row = find_open_session(ws)
-        target_row = open_row if open_row and open_row in today_rows else today_rows[-1]
+        # Default: open session if it belongs to today, otherwise last session
+        open_sess = get_open_session()
+        if open_sess:
+            open_id = open_sess[0]
+            today_ids = [s[0] for s in today_sessions]
+            target = today_sessions[today_ids.index(open_id)] if open_id in today_ids else today_sessions[-1]
+        else:
+            target = today_sessions[-1]
 
-    target_idx = today_rows.index(target_row) + 1
-    ws.cell(row=target_row, column=6, value=epic)
-    wb.save(EXCEL_FILE)
+    target_id = target[0]
+    target_idx = today_sessions.index(target) + 1
+    update_session_task(target_id, epic)
     print(f"📌  #{target_idx}  {epic}  saved.")
 
 
 def cmd_log(week_str=None):
-    """Show a full week's sessions with task labels (replaces promark terminal output)."""
-    if not os.path.exists(EXCEL_FILE):
-        print(_NO_FILE_MSG)
-        return
-
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb[LOG_SHEET]
-    days = read_log(ws)
+    """Show a full week's sessions with task labels."""
+    days = read_log()
 
     today_iso = date.today().isocalendar()
-    if week_str is None:
-        target_week = today_iso.week
-        target_year = today_iso.year
-    else:
-        target_week = int(week_str[1:])
-        target_year = today_iso.year
+    target_week = today_iso.week if week_str is None else int(week_str[1:])
+    target_year = today_iso.year
 
     week_days = {
         d: info for d, info in days.items()
@@ -184,22 +118,12 @@ def cmd_log(week_str=None):
 
 
 def cmd_promark(week_str=None):
-    """Print a full week's Promark entries to the terminal and rebuild the Promark tab."""
-    if not os.path.exists(EXCEL_FILE):
-        print(_NO_FILE_MSG)
-        return
-
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb[LOG_SHEET]
-    days = read_log(ws)
+    """Print a full week's Promark entries to the terminal."""
+    days = read_log()
 
     today_iso = date.today().isocalendar()
-    if week_str is None:
-        target_week = today_iso.week
-        target_year = today_iso.year
-    else:
-        target_week = int(week_str[1:])
-        target_year = today_iso.year
+    target_week = today_iso.week if week_str is None else int(week_str[1:])
+    target_year = today_iso.year
 
     week_days = {
         d: info for d, info in days.items()
@@ -209,46 +133,46 @@ def cmd_promark(week_str=None):
 
     print_promark_week(week_days, target_week, target_year)
 
-    print("🔄  Rebuilding Promark sheet…")
-    build_promark(wb)
-    wb.save(EXCEL_FILE)
-    print("✅  Promark tab updated.")
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _build_day_status(ws, now: datetime | None = None) -> DayStatus:
-    """Gather today's log data from the worksheet into a DayStatus."""
+def _build_day_status(now: datetime | None = None) -> DayStatus:
+    """Gather today's log data into a DayStatus for the printers."""
     now = now or datetime.now()
     today_str = date.today().strftime("%Y-%m-%d")
-    days = read_log(ws)
-    info = days.get(today_str)
 
-    sessions = info["sessions"] if info else []   # list of (start, end, task)
-    total_hours = info["total"] if info else 0.0
+    # All of today's sessions: [(id, start, end, task)]
+    today_sessions = get_today_sessions()
+
+    # Separate completed sessions (end is not None) from the open one
+    completed = [
+        (start, end, task)
+        for _id, start, end, task in today_sessions
+        if end is not None
+    ]
+    total_hours = sum(_session_hours(s, e) for s, e, _ in completed)
 
     active_start = None
     active_hours = 0.0
     active_task = None
-    open_row = find_open_session(ws)
-    if open_row:
-        raw = ws.cell(row=open_row, column=3).value
-        active_start = str(raw).strip() if raw else None
-        active_task = str(ws.cell(row=open_row, column=6).value or "").strip() or None
-        if active_start:
-            try:
-                s = datetime.strptime(active_start, "%H:%M")
-                active_hours = (now.hour * 60 + now.minute - (s.hour * 60 + s.minute)) / 60
-            except ValueError:
-                active_hours = 0.0
 
-    pm_start, pm_end = promark_entry(sessions, total_hours) if sessions else (None, None)
+    open_sess = get_open_session()
+    if open_sess:
+        _id, _date, active_start, active_task = open_sess
+        active_task = active_task or None
+        try:
+            s = datetime.strptime(active_start, "%H:%M")
+            active_hours = (now.hour * 60 + now.minute - (s.hour * 60 + s.minute)) / 60
+        except ValueError:
+            active_hours = 0.0
+
+    pm_start, pm_end = promark_entry(completed, total_hours) if completed else (None, None)
 
     return DayStatus(
         today_str=today_str,
-        sessions=sessions,
+        sessions=completed,
         total_hours=total_hours,
         target_hours=TARGET_HOURS,
         active_start=active_start,
@@ -259,27 +183,27 @@ def _build_day_status(ws, now: datetime | None = None) -> DayStatus:
     )
 
 
-def _close_session(time_override=None):
-    """Set End on the open session. Returns (wb, ws) or (None, None)."""
-    if not os.path.exists(EXCEL_FILE):
-        print(_NO_FILE_MSG)
-        return None, None
+def _session_hours(start: str, end: str) -> float:
+    """Calculate decimal hours between two HH:MM strings."""
+    try:
+        s = datetime.strptime(start, "%H:%M")
+        e = datetime.strptime(end, "%H:%M")
+        return (e.hour * 60 + e.minute - (s.hour * 60 + s.minute)) / 60
+    except ValueError:
+        return 0.0
 
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb[LOG_SHEET]
 
-    open_row = find_open_session(ws)
-    if not open_row:
+def _close_session(time_override=None) -> bool:
+    """Close the open session. Returns True on success, False if none is open."""
+    open_sess = get_open_session()
+    if not open_sess:
         print("No open session found. Run 'start' first.")
-        return None, None
+        return False
 
+    sess_id, date_val, start_val, _task = open_sess
     time_str = time_override or datetime.now().strftime("%H:%M")
-    start_val = ws.cell(row=open_row, column=3).value
-    date_val = ws.cell(row=open_row, column=1).value
-
-    ws.cell(row=open_row, column=4, value=time_str)
+    close_session(sess_id, time_str)
 
     note = " (manually set)" if time_override else ""
-    wb.save(EXCEL_FILE)
     print(f"⏸  Closed — {date_val}  {start_val} → {time_str}{note}")
-    return wb, ws
+    return True

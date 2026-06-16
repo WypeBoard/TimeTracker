@@ -233,20 +233,31 @@ Code should optimize for future understanding.
 
 # Dependency Policy
 
-## Prefer the Standard Library
+## Prefer Battle-Tested Libraries Over Custom Implementations
 
-Before introducing a dependency, consider whether the Python standard library already provides a sufficient solution.
+Well-established, widely adopted libraries should always be considered before writing a custom solution.
 
-Dependencies should only be added when they provide meaningful value.
+Examples of libraries that should be preferred when relevant:
 
-When proposing a new dependency, explain:
+* **Textual / Rich** — terminal UI and formatting
+* **SQLAlchemy** — database access and ORM
+* **Pydantic** — data validation and settings management
+* **Click / Typer** — CLI argument parsing
+
+A custom implementation is acceptable when:
+
+* The required scope is small and self-contained
+* No well-known library covers the use case well
+* The added dependency would far exceed the complexity it replaces
+
+When proposing or accepting a dependency, document:
 
 * Why it is needed
-* Alternatives considered
+* Alternatives considered (including a custom implementation)
 * Benefits gained
 * Maintenance implications
 
-Small solutions are preferred over dependency sprawl.
+Avoid dependency sprawl — each dependency must justify its inclusion. But do not reject a proven library simply to avoid a dependency.
 
 ---
 
