@@ -1,6 +1,6 @@
 # Feature: Textual TUI
 
-Status: Proposed
+Status: Implemented
 
 ## Purpose
 
@@ -369,8 +369,14 @@ The `AppContext` refactor touches every `Commands.py` function. Before the featu
 considered implemented, a smoke test suite must pass that exercises a complete normal
 working day end-to-end against a real (file-backed) test database.
 
-These are **integration tests** (`tests/test_smoke.py`), not unit tests — they test the
-full command → storage → read-back cycle. They do not test the TUI widgets.
+These are **integration tests** (`tests/test_smoke.py`) using **pytest**, not unit tests —
+they test the full command → storage → read-back cycle. They do not test the TUI widgets.
+
+Add pytest to a `requirements-dev.txt` when the test suite is created:
+
+```
+pytest>=8.0
+```
 
 #### Normal day scenario
 
@@ -405,8 +411,8 @@ stop 2130                  → session #3 closes at 21:30
 | `stop` with no open session | Prints error; session count unchanged. |
 | `log w<N>` | Returns sessions for the correct ISO week; cross-week sessions not included. |
 
-The test file should use a **temporary SQLite database** (via `tempfile` or `tmp_path` in
-pytest) so tests are isolated and leave no side-effects.
+The test file should use pytest's built-in **`tmp_path`** fixture for a temporary
+SQLite database so tests are isolated and leave no side-effects.
 
 ---
 

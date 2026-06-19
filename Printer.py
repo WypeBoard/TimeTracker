@@ -98,16 +98,14 @@ def _sessions_table(
     return table
 
 
-# ── public printers ──────────────────────────────────────────────────────────
+# ── buildable renderables (used by both CLI printers and TUI widgets) ────────
 
-def print_status(status: DayStatus, now: datetime) -> None:
-    """Live status: sessions, active session, progress bar, leave time."""
-    title = (
-        f"📅  [bold]{status.today_str}[/bold]"
-        f"  [dim]—[/dim]"
-        f"  🕐 [bold]{now.strftime('%H:%M')}[/bold]"
-    )
+def build_status_group(status: DayStatus, now: datetime) -> Group:
+    """Build the Rich Group that represents the live status view.
 
+    Extracted so both print_status() and the TUI TodayPanel can reuse the
+    same rendering logic without going through console.print().
+    """
     rows: list = []
 
     if status.sessions or status.active_start:
@@ -152,42 +150,15 @@ def print_status(status: DayStatus, now: datetime) -> None:
             f"  [dim](no active session)[/dim][/{_C_WARN}]"
         ))
 
-    console.print(Panel(Group(*rows), title=title, border_style=_C_BORDER, padding=(0, 2)))
-    console.print()
+    return Group(*rows)
 
 
-def print_day_summary(status: DayStatus) -> None:
-    """End-of-session summary: session list, total, delta vs target."""
-    title = f"📅  [bold]{status.today_str}[/bold]"
-    rows: list = []
+def build_log_week_panel(week_days: dict, week_num: int, year: int) -> Panel:
+    """Build the Rich Panel for a full week log view.
 
-    if not status.sessions:
-        rows.append(Text("No completed sessions today.", style=_C_DIM))
-    else:
-        rows.append(_sessions_table(status.sessions))
-        rows.append(Text(""))
-
-        diff = status.total_hours - status.target_hours
-        sign = "+" if diff >= 0 else ""
-        delta_style = _C_OK if diff >= 0 else _C_WARN
-        delta_icon  = "✅" if diff >= 0 else "⚠️ "
-
-        rows.append(Text.from_markup(
-            f"  Total    [bold]{status.total_hours:.2f}h[/bold]"
-            f" [dim]/[/dim] {status.target_hours:.2f}h   "
-            + _hours_bar(status.total_hours, status.target_hours)
-        ))
-        rows.append(Text.from_markup(
-            f"  Delta    [{delta_style}]{delta_icon}  {sign}{diff:.2f}h[/{delta_style}]"
-        ))
-
-    console.print(Panel(Group(*rows), title=title, border_style=_C_BORDER, padding=(0, 2)))
-    console.print()
-
-
-def print_log_week(week_days: dict, week_num: int, year: int) -> None:
-    """Print a full week's sessions (with task labels) and daily/weekly totals."""
-    # Resolve the Monday of the target ISO week.
+    Extracted so both print_log_week() and the TUI LogScreen can reuse the
+    same rendering logic.
+    """
     jan4 = date(year, 1, 4)
     week1_monday = jan4 - timedelta(days=jan4.weekday())
     monday = week1_monday + timedelta(weeks=week_num - 1)
@@ -229,7 +200,6 @@ def print_log_week(week_days: dict, week_num: int, year: int) -> None:
                 )
                 rows.append(line)
 
-            # Daily total on its own line if more than one session
             if len(sessions) > 1:
                 rows.append(Text.from_markup(
                     f"           [dim]daily total[/dim]  [bold]{day_total:.2f}h[/bold]"
@@ -242,15 +212,17 @@ def print_log_week(week_days: dict, week_num: int, year: int) -> None:
         f"  [bold]Week total:[/bold]  [bold cyan]{week_total:.2f}h[/bold cyan]"
     ))
 
-    console.print(Panel(Group(*rows), title=title, border_style=_C_PROMARK, padding=(0, 2)))
-    console.print()
+    return Panel(Group(*rows), title=title, border_style=_C_PROMARK, padding=(0, 2))
 
 
-def print_promark_week(week_days: dict, week_num: int, year: int) -> None:
-    """Print Mon–Fri Promark entries for the given ISO week as a rich table."""
+def build_promark_panel(week_days: dict, week_num: int, year: int) -> Panel:
+    """Build the Rich Panel for the Promark week table.
+
+    Extracted so both print_promark_week() and the TUI OutputPanel can reuse
+    the same rendering logic.
+    """
     from Promark import promark_entry
 
-    # Resolve the Monday of the target ISO week.
     jan4 = date(year, 1, 4)
     week1_monday = jan4 - timedelta(days=jan4.weekday())
     monday = week1_monday + timedelta(weeks=week_num - 1)
@@ -301,5 +273,63 @@ def print_promark_week(week_days: dict, week_num: int, year: int) -> None:
                 style=row_style,
             )
 
-    console.print(Panel(t, title=title, border_style=_C_PROMARK, padding=(0, 2)))
+    return Panel(t, title=title, border_style=_C_PROMARK, padding=(0, 2))
+
+
+# ── public printers ──────────────────────────────────────────────────────────
+
+def print_status(status: DayStatus, now: datetime) -> None:
+    """Live status: sessions, active session, progress bar, leave time."""
+    title = (
+        f"📅  [bold]{status.today_str}[/bold]"
+        f"  [dim]—[/dim]"
+        f"  🕐 [bold]{now.strftime('%H:%M')}[/bold]"
+    )
+    console.print(Panel(
+        build_status_group(status, now),
+        title=title,
+        border_style=_C_BORDER,
+        padding=(0, 2),
+    ))
+    console.print()
+
+
+def print_day_summary(status: DayStatus) -> None:
+    """End-of-session summary: session list, total, delta vs target."""
+    title = f"📅  [bold]{status.today_str}[/bold]"
+    rows: list = []
+
+    if not status.sessions:
+        rows.append(Text("No completed sessions today.", style=_C_DIM))
+    else:
+        rows.append(_sessions_table(status.sessions))
+        rows.append(Text(""))
+
+        diff = status.total_hours - status.target_hours
+        sign = "+" if diff >= 0 else ""
+        delta_style = _C_OK if diff >= 0 else _C_WARN
+        delta_icon  = "✅" if diff >= 0 else "⚠️ "
+
+        rows.append(Text.from_markup(
+            f"  Total    [bold]{status.total_hours:.2f}h[/bold]"
+            f" [dim]/[/dim] {status.target_hours:.2f}h   "
+            + _hours_bar(status.total_hours, status.target_hours)
+        ))
+        rows.append(Text.from_markup(
+            f"  Delta    [{delta_style}]{delta_icon}  {sign}{diff:.2f}h[/{delta_style}]"
+        ))
+
+    console.print(Panel(Group(*rows), title=title, border_style=_C_BORDER, padding=(0, 2)))
+    console.print()
+
+
+def print_log_week(week_days: dict, week_num: int, year: int) -> None:
+    """Print a full week's sessions (with task labels) and daily/weekly totals."""
+    console.print(build_log_week_panel(week_days, week_num, year))
+    console.print()
+
+
+def print_promark_week(week_days: dict, week_num: int, year: int) -> None:
+    """Print Mon–Fri Promark entries for the given ISO week as a rich table."""
+    console.print(build_promark_panel(week_days, week_num, year))
     console.print()

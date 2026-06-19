@@ -3,13 +3,17 @@
 Time Tracker — logs work sessions to a SQLite database.
 
 Usage:
-  python TimeTracker.py [start|pause|stop|restart|status|task|log|promark] [args]
-  python TimeTracker.py          (interactive prompt)
+  python TimeTracker.py [start|pause|stop|resume|restart|status|task|log|promark] [args]
+  python TimeTracker.py          (launches the Textual TUI)
 """
 
 import argparse
 import re
-from Commands import cmd_start, cmd_pause, cmd_stop, cmd_restart, cmd_status, cmd_task, cmd_log, cmd_promark
+from app_context import CliAppContext
+from Commands import (
+    cmd_start, cmd_pause, cmd_stop, cmd_resume, cmd_restart,
+    cmd_status, cmd_task, cmd_log, cmd_promark,
+)
 from Storage import create_schema
 
 
@@ -52,27 +56,6 @@ def _parse_start_args(raw_args):
     return time_override, epic
 
 
-def prompt_command():
-    print("What do you want to do?")
-    print("  1) start")
-    print("  2) pause")
-    print("  3) stop")
-    print("  4) restart")
-    print("  5) status")
-    print("  6) task")
-    print("  7) log")
-    print("  8) promark")
-    choice = input("Enter 1–8: ").strip()
-    command = {
-        "1": "start", "2": "pause", "3": "stop", "4": "restart",
-        "5": "status", "6": "task", "7": "log", "8": "promark",
-    }.get(choice)
-    if not command:
-        print(f"Invalid choice '{choice}'.")
-        return None
-    return command
-
-
 def main():
     # Ensure the database directory, tables, and triggers exist before any
     # command runs. Safe to call on every startup — all DDL uses IF NOT EXISTS.
@@ -87,7 +70,8 @@ def main():
             "  python TimeTracker.py start 0830\n"
             "  python TimeTracker.py start Epic-42\n"
             "  python TimeTracker.py start 0830 Epic-42\n"
-            "  python TimeTracker.py restart\n"
+            "  python TimeTracker.py resume\n"
+            "  python TimeTracker.py resume 1150\n"
             "  python TimeTracker.py pause\n"
             "  python TimeTracker.py stop 1715\n"
             "  python TimeTracker.py status\n"
@@ -109,14 +93,25 @@ def main():
     # pause / stop — optional time override
     for cmd, help_text in [
         ("pause", "Clock out temporarily — resume later with start"),
-        ("stop",  "Clock out for the day and update the Summary sheet"),
+        ("stop",  "Clock out for the day and show a day summary"),
     ]:
         p = sub.add_parser(cmd, help=help_text)
         p.add_argument("time", nargs="?", type=hhmm, metavar="hhmm",
                        help="Optional time override, e.g. 0830")
 
-    # restart — optional time override
-    p_restart = sub.add_parser("restart", help="Close session and reopen, carrying epic forward")
+    # resume — close current session (if any) and reopen, carrying epic forward
+    p_resume = sub.add_parser(
+        "resume",
+        help="Resume after a break, carrying the epic forward",
+    )
+    p_resume.add_argument("time", nargs="?", type=hhmm, metavar="hhmm",
+                          help="Optional time override, e.g. 1150")
+
+    # restart — deprecated alias for resume
+    p_restart = sub.add_parser(
+        "restart",
+        help="Deprecated — use 'resume' instead",
+    )
     p_restart.add_argument("time", nargs="?", type=hhmm, metavar="hhmm",
                            help="Optional time override, e.g. 1015")
 
@@ -133,7 +128,7 @@ def main():
     p_log.add_argument("week", nargs="?", type=week_arg, metavar="wNN",
                        help="Week to display, e.g. w23. Defaults to the current week.")
 
-    # promark — kept for backward compatibility
+    # promark — optional week
     p_pm = sub.add_parser("promark", help="Show Promark entries (defaults to current week)")
     p_pm.add_argument("week", nargs="?", type=week_arg, metavar="wNN",
                       help="Week to display, e.g. w21. Defaults to the current week.")
@@ -141,54 +136,34 @@ def main():
     args = parser.parse_args()
 
     if not args.command:
-        command = prompt_command()
-        if not command:
-            return
-        # Interactive: run without extra args
-        dispatch_interactive(command)
+        # No subcommand — launch the Textual TUI.
+        from app.TimeTrackerApp import TimeTrackerApp
+        TimeTrackerApp().run()
         return
 
+    # One-shot CLI mode: instantiate a CliAppContext and dispatch.
+    ctx = CliAppContext()
     command = args.command
 
     if command == "start":
         time_override, epic = _parse_start_args(getattr(args, "args", []))
-        cmd_start(time_override, epic)
+        cmd_start(ctx, time_override, epic)
     elif command == "pause":
-        cmd_pause(getattr(args, "time", None))
+        cmd_pause(ctx, getattr(args, "time", None))
     elif command == "stop":
-        cmd_stop(getattr(args, "time", None))
+        cmd_stop(ctx, getattr(args, "time", None))
+    elif command == "resume":
+        cmd_resume(ctx, getattr(args, "time", None))
     elif command == "restart":
-        cmd_restart(getattr(args, "time", None))
+        cmd_restart(ctx, getattr(args, "time", None))
     elif command == "status":
         cmd_status()
     elif command == "task":
-        cmd_task(args.epic, args.session_num)
+        cmd_task(ctx, args.epic, args.session_num)
     elif command == "log":
-        cmd_log(getattr(args, "week", None))
+        cmd_log(ctx, getattr(args, "week", None))
     elif command == "promark":
-        cmd_promark(getattr(args, "week", None))
-
-
-def dispatch_interactive(command):
-    """Run a command chosen via the interactive prompt (no extra args)."""
-    if command == "start":
-        cmd_start()
-    elif command == "pause":
-        cmd_pause()
-    elif command == "stop":
-        cmd_stop()
-    elif command == "restart":
-        cmd_restart()
-    elif command == "status":
-        cmd_status()
-    elif command == "task":
-        epic = input("Epic/task ID: ").strip()
-        if epic:
-            cmd_task(epic)
-    elif command == "log":
-        cmd_log()
-    elif command == "promark":
-        cmd_promark()
+        cmd_promark(ctx, getattr(args, "week", None))
 
 
 if __name__ == "__main__":
