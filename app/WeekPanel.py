@@ -1,11 +1,18 @@
-"""WeekPanel — condensed view of the current week's daily totals.
+"""WeekPanel — promark-style view of the current week.
 
-Shows Mon–Fri with the promark-style start→end range and total hours for
-each day. Today's row highlights the in-progress total if a session is
-currently active.
+Displays Mon–Fri with date, day name, promark start→end range, and total
+hours for each day:
 
-This panel is not timer-driven. It refreshes only when a mutating command
-(start/stop/pause/resume/task) fires TuiAppContext.on_session_changed().
+    2026-06-16  Mon  07:30 → 17:00  7:30
+    2026-06-17  Tue  08:00 → 15:45  7:15
+    2026-06-18  Wed  —
+    2026-06-19  Thu  08:30 → now ▶  4:00
+
+Today's row shows "now ▶" for the end time when a session is active, and the
+hours cell includes a ▶ marker. Days with no sessions show "—" in the range.
+
+The panel refreshes on demand when TuiAppContext.on_session_changed() is called
+and every 60 seconds via a timer (so the running total stays current).
 """
 from datetime import date, timedelta
 
@@ -16,7 +23,7 @@ from textual.widgets import Static
 
 
 class WeekPanel(Static):
-    """Current-week daily totals (Mon–Fri)."""
+    """Current-week daily totals in promark-style (Date Day Start→End Hours)."""
 
     DEFAULT_CSS = """
     WeekPanel {
@@ -30,6 +37,8 @@ class WeekPanel(Static):
 
     def on_mount(self) -> None:
         self.refresh_data()
+        # Refresh every 60 seconds so the active-session running total stays current.
+        self.set_interval(60, self.refresh_data)
 
     def refresh_data(self) -> None:
         """Re-query the current week's sessions and redraw the panel."""
@@ -41,8 +50,8 @@ class WeekPanel(Static):
         week_num = today_iso.week
         year = today_iso.year
 
-        # read_log() returns only *closed* sessions, so we supplement with
-        # today's live status for the current day.
+        # read_log() returns only *closed* sessions; today's live status
+        # supplements it with any active session.
         days = read_log()
         day_status = _build_day_status()
 
@@ -52,13 +61,16 @@ class WeekPanel(Static):
 
 
 def _build_week_table(
-    days: dict,
-    day_status,
-    week_num: int,
-    year: int,
-    today: date,
+        days: dict,
+        day_status,
+        week_num: int,
+        year: int,
+        today: date,
 ) -> Table:
-    """Build a Rich Table showing daily totals for Mon–Fri of the given week."""
+    """Build a Rich Table with the promark-style week layout."""
+    from Promark import promark_entry
+    from app.utils import format_hhmm
+
     # Resolve the Monday of the target ISO week.
     jan4 = date(year, 1, 4)
     week1_monday = jan4 - timedelta(days=jan4.weekday())
@@ -73,8 +85,10 @@ def _build_week_table(
         padding=(0, 1),
         show_edge=False,
     )
-    table.add_column("Day",   style="dim",      no_wrap=True)
-    table.add_column("Hours", justify="right",  no_wrap=True)
+    table.add_column("Date",  style="dim",  no_wrap=True)
+    table.add_column("Day",   style="dim",  no_wrap=True)
+    table.add_column("Range", no_wrap=True)
+    table.add_column("Hours", justify="right", no_wrap=True)
 
     for i in range(5):
         d = monday + timedelta(days=i)
@@ -83,23 +97,43 @@ def _build_week_table(
         is_today = date_str == today_str
 
         if is_today:
-            # Use live status which includes the active session's partial hours.
             total = day_status.total_so_far
-            if total > 0:
-                suffix = " ▶" if day_status.active_start else ""
-                hours_text = Text(f"{total:.2f}h{suffix}", style="bold green")
-            else:
-                hours_text = Text("—", style="dim")
-        elif date_str in days:
-            total = days[date_str]["total"]
-            hours_text = Text(f"{total:.2f}h", style="bold")
-        else:
-            hours_text = Text("—", style="dim")
+            if total > 0 or day_status.active_start:
+                # Use promark_start if available (requires at least one closed
+                # session); fall back to the active session's start time.
+                pm_start = day_status.promark_start or day_status.active_start
 
-        label_style = "bold" if is_today else "dim"
-        table.add_row(
-            Text(day_label, style=label_style),
-            hours_text,
-        )
+                if day_status.active_start:
+                    # Session is still running — show "now ▶" for the end time.
+                    range_text = Text(f"{pm_start} → now ▶", style="bold green")
+                    hours_text = Text(f"{format_hhmm(total)} ▶", style="bold green")
+                else:
+                    # Day is closed — show the computed promark end.
+                    pm_end = day_status.promark_end or "?"
+                    range_text = Text(f"{pm_start} → {pm_end}", style="bold")
+                    hours_text = Text(format_hhmm(total), style="bold green")
+            else:
+                range_text = Text("—", style="dim")
+                hours_text = Text("—", style="dim")
+
+            date_text = Text(date_str, style="bold")
+            day_text  = Text(day_label, style="bold")
+
+        elif date_str in days:
+            sessions = days[date_str]["sessions"]
+            total    = days[date_str]["total"]
+            pm_start, pm_end = promark_entry(sessions, total)
+            range_text = Text(f"{pm_start} → {pm_end}", style="")
+            hours_text = Text(format_hhmm(total), style="bold")
+            date_text  = Text(date_str, style="dim")
+            day_text   = Text(day_label, style="dim")
+
+        else:
+            range_text = Text("—", style="dim")
+            hours_text = Text("", style="")
+            date_text  = Text(date_str, style="dim")
+            day_text   = Text(day_label, style="dim")
+
+        table.add_row(date_text, day_text, range_text, hours_text)
 
     return table

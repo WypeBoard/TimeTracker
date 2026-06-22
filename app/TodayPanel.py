@@ -35,13 +35,18 @@ class TodayPanel(Static):
         self.set_interval(60, self.refresh_data)
 
     def refresh_data(self) -> None:
-        """Re-query today's sessions and redraw the panel content."""
+        """Re-query today's sessions and redraw the panel content.
+
+        The progress bar is intentionally omitted here (show_progress=False)
+        because ProgressStrip owns that responsibility on the TUI dashboard.
+        The CLI path via print_status() is unaffected.
+        """
         from Commands import _build_day_status
         from Printer import build_status_group
 
         now = datetime.now()
         status = _build_day_status(now)
-        group = build_status_group(status, now)
+        group = build_status_group(status, now, show_progress=False)
 
         self.update(group)
         self.border_title = f"Today: {status.today_str}"
