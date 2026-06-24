@@ -80,22 +80,39 @@ python TimeTracker.py stop 1715
 
 ---
 
-### `restart [hhmm]`
+### `restart [hhmm]` *(deprecated)*
 
-Closes the running session and immediately opens a new one, carrying the
-Task/Epic value of the previous session forward. Useful for returning from a
-break without retyping the epic.
+**Deprecated — use `resume` instead.** Prints a deprecation notice and then
+behaves identically to `resume`. Will be removed in a future cleanup.
 
 ```
 python TimeTracker.py restart
 python TimeTracker.py restart 1015
 ```
 
+---
+
+### `resume [hhmm]`
+
+Opens a new session, carrying the Task/Epic of the most recent session
+forward. The natural inverse of `pause`: clock out → break → clock back in.
+
+Covers two cases:
+- **Open session exists:** closes it at `hhmm` (or now), then opens a new
+  session with the same epic — equivalent to `pause` + `start <same_epic>`.
+- **No open session, but closed sessions exist today:** opens a new session
+  carrying the last session's epic.
+
+```
+python TimeTracker.py resume
+python TimeTracker.py resume 1150
+```
+
 Output:
 
 ```
-⏸  Closed #1 — 08:32 → 10:15
-▶  Started #2 — 10:15  Epic-42  (carried forward)
+⏸  Closed #1 — 07:00 → 11:20
+▶  Started #2 — 11:50  TASK-1234  (carried forward)
 ```
 
 ---
@@ -191,17 +208,9 @@ python TimeTracker.py promark w23
 
 ### Interactive mode
 
-Running `python TimeTracker.py` with no arguments launches a numbered prompt:
-
-```
-What do you want to do?
-  1) start    2) pause    3) stop     4) restart
-  5) status   6) task     7) log      8) promark
-Enter 1–8:
-```
-
-Commands that require arguments (e.g. `task` asks for the epic interactively)
-are supported; time overrides are not available through the interactive prompt.
+Running `python TimeTracker.py` with no arguments now launches the
+**Textual TUI** (persistent dashboard). The old numbered-menu prompt has been
+replaced. See `docs/tui.md` for the TUI reference.
 
 ---
 
@@ -211,21 +220,24 @@ are supported; time overrides are not available through the interactive prompt.
   is not yet handled.
 - Weekend sessions (Saturday, Sunday) are stored in the database but `log`
   only displays Mon–Fri.
-- The interactive prompt does not support time overrides.
 
 ---
 
 ## Notes
 
-- `restart` always carries the Task/Epic of the *previous* session; there is
-  no flag to override the carried epic in the same call (use `task`
-  afterwards if needed).
+- `resume` always carries the Task/Epic of the *most recent* session (open
+  or closed); there is no flag to override the carried epic in the same call
+  (use `task` afterwards if needed).
+- `restart` is a deprecated alias for `resume` — it prints a deprecation
+  notice and delegates. It will be removed in a future cleanup.
 - One task per session is by design. For genuine task switches use
-  `pause` → `start <epic>` or `restart` followed by `task`.
+  `pause` → `start <epic>` or `resume` followed by `task`.
 
 ---
 
 ## Related Features
 
-- `features/commands.md` — original design document
+- `features/textual.md` — TUI design document
+- `features/commands.md` — original commands design document
 - `docs/sqlite-datasource.md` — database schema and storage layer
+- `docs/tui.md` — TUI usage and keybinding reference
