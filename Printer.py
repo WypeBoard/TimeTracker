@@ -113,9 +113,10 @@ def build_status_group(
     Args:
         status: Today's session data.
         now: Current datetime (used to compute leave time).
-        show_progress: When False, the progress bar and leave-time lines are
-            omitted. Set to False in the TUI path because ProgressStrip owns
-            that responsibility; leave True for the CLI path.
+        show_progress: When False, the progress bar line (Logged X / Y [bar])
+            is omitted. The remaining-time and leave-time lines are always
+            shown when relevant — ProgressStrip owns the bar in TUI mode, but
+            the leave estimate still lives in TodayPanel.
     """
     rows: list = []
 
@@ -137,26 +138,32 @@ def build_status_group(
             + _hours_bar(status.total_so_far, status.target_hours)
         ))
 
-        remaining = status.remaining
-        if remaining <= 0:
-            rows.append(Text.from_markup(
-                f"\n  [{_C_OK}]✅  Target reached — {-remaining:.2f}h over[/{_C_OK}]"
-            ))
-        elif status.active_start:
-            leave_min  = now.hour * 60 + now.minute + int(remaining * 60)
-            leave_h, leave_m = divmod(leave_min, 60)
-            leave_line = (
-                f"\n  [{_C_WARN}]⏳  Remaining [bold]{remaining:.2f}h[/bold][/{_C_WARN}]"
-                f"   [cyan]🚪  Leave at [bold]{leave_h:02d}:{leave_m:02d}[/bold][/cyan]"
+    # Always show the remaining / leave-time indicator when there is something
+    # to show — this line belongs in TodayPanel regardless of whether the
+    # progress bar is present.
+    remaining = status.remaining
+    if remaining <= 0 and (status.sessions or status.active_start):
+        rows.append(Text.from_markup(
+            f"\n  [{_C_OK}]✅  Target reached — {-remaining:.2f}h over[/{_C_OK}]"
+        ))
+    elif status.active_start:
+        leave_min  = now.hour * 60 + now.minute + int(remaining * 60)
+        leave_h, leave_m = divmod(leave_min, 60)
+        leave_line = (
+            f"\n  [{_C_WARN}]⏳  Remaining [bold]{remaining:.2f}h[/bold][/{_C_WARN}]"
+            f"   [cyan]🚪  Leave at [bold]{leave_h:02d}:{leave_m:02d}[/bold][/cyan]"
+        )
+        if not status.sessions:  # only this one active session — show lunch variant
+            lunch_min  = leave_min + 30
+            lunch_h, lunch_m = divmod(lunch_min, 60)
+            leave_line += (
+                f"   [dim]([/dim][magenta]with lunch [bold]{lunch_h:02d}:{lunch_m:02d}[/bold][/magenta][dim])[/dim]"
             )
-            if not status.sessions:  # only this one active session — show lunch variant
-                lunch_min  = leave_min + 30
-                lunch_h, lunch_m = divmod(lunch_min, 60)
-                leave_line += (
-                    f"   [dim]([/dim][magenta]with lunch [bold]{lunch_h:02d}:{lunch_m:02d}[/bold][/magenta][dim])[/dim]"
-                )
-            rows.append(Text.from_markup(leave_line))
-        else:
+        rows.append(Text.from_markup(leave_line))
+    elif not status.active_start and (status.sessions or show_progress):
+        # Sessions exist but none is active — show the "still needed" reminder
+        # only in the full CLI view (show_progress=True) to avoid noise in TUI.
+        if show_progress and remaining > 0:
             rows.append(Text.from_markup(
                 f"\n  [{_C_WARN}]⏳  Still needed [bold]{remaining:.2f}h[/bold]"
                 f"  [dim](no active session)[/dim][/{_C_WARN}]"

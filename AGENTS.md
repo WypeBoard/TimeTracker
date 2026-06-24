@@ -92,6 +92,10 @@ Implementation may only begin once the feature status is:
 Approved
 ```
 
+**Important:** Setting the status to `Approved` does NOT trigger implementation.
+The LLM must never begin implementing a feature on its own initiative, even if the status is `Approved`.
+Implementation begins only when the user explicitly requests it in a new session, with a direct reference to the feature document.
+
 When the feature is in `Completed` and has been documented it may be removed. 
 
 ---
@@ -106,6 +110,28 @@ Status: Brainstorming
 ## Purpose
 
 Describe why the feature exists.
+
+## Next Step
+
+State what must happen before the status can advance to the next stage.
+Update this section every time the status changes.
+
+Example:
+
+> **Current status:** Brainstorming
+> **To reach Proposed:** Consolidate brainstorm notes into a concrete Requirements list and Non-Goals section.
+
+> **Current status:** Proposed
+> **To reach Approved:** User reviews and explicitly approves the design.
+
+> **Current status:** Approved
+> **To reach Implemented:** User opens a new session and explicitly requests implementation with a reference to this feature document.
+
+> **Current status:** Implemented
+> **To reach Documented:** All files listed in the Documentation Plan are created or updated.
+
+> **Current status:** Documented
+> **To reach Completed:** User confirms the documentation is accurate and the feature is working as described.
 
 ## Requirements
 
@@ -124,6 +150,22 @@ Example:
 2026-06-12
 - User changed validation rule.
 - Previous brainstorming decisions on this topic are superseded.
+
+## Documentation Plan
+
+List every documentation file that must be created or updated when this feature is implemented.
+
+For each entry, state whether the file should be **created** (new) or **updated** (existing), and briefly describe what changes are needed.
+
+Example:
+
+| File | Action | Description |
+|------|--------|-------------|
+| `docs/commands.md` | Update | Add new `export` command to the command reference |
+| `docs/export.md` | Create | New doc describing export behavior and options |
+
+> Note: A single feature may require changes to multiple documentation files.
+> Always check existing docs before creating a new file — it may be more appropriate to extend an existing one.
 
 ## Brainstorm Notes
 
@@ -156,7 +198,19 @@ accordingly.
 
 Documentation should focus on the current state of the application.
 
-Suggested sections:
+## Multiple Files May Need Updating
+
+A single feature can affect more than one documentation file. Before writing any documentation:
+
+1. Review all existing files under `docs/` to identify any that already cover related behavior.
+2. Prefer **updating** an existing file over creating a new one when the content logically belongs there.
+3. Create a new file only when the feature introduces a genuinely distinct topic.
+
+Every affected documentation file must be updated — not just the most obvious one.
+
+## Suggested Sections
+
+Suggested sections for a documentation file:
 
 ```md
 # Feature Name
