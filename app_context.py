@@ -1,8 +1,8 @@
 """AppContext — output and refresh abstraction layer.
 
 Commands.py dispatches feedback through an AppContext instead of calling
-print() directly. This allows the same command logic to work in both the
-one-shot CLI (CliAppContext) and the Textual TUI (TuiAppContext).
+print() directly. This allows the same command logic to be used both in
+the Textual TUI (TuiAppContext) and in tests (RecordingContext in test_smoke.py).
 
 Why a Protocol?
 ---------------
@@ -10,13 +10,14 @@ Protocol (from typing) describes a structural interface: any class that
 implements the required methods satisfies it, without needing to inherit from
 it. This is Python's equivalent of a Go interface or a TypeScript interface.
 
-Two things differ between CLI and TUI mode:
-  1. How feedback messages are delivered (stdout vs. Output panel widget).
-  2. Which UI state needs refreshing after a command (nothing in CLI; panels
-     in TUI).
+Two concerns are abstracted:
+  1. How feedback messages are delivered (Output panel widget in TUI, captured
+     list in tests).
+  2. Which UI state needs refreshing after a command (panels in TUI; no-op in
+     tests).
 
 A Protocol targeting exactly these two concerns avoids duplicating the command
-routing logic that is otherwise identical in both modes.
+routing logic that is otherwise identical across contexts.
 """
 from __future__ import annotations
 
@@ -48,64 +49,31 @@ class AppContext(Protocol):
     def on_session_changed(self) -> None:
         """Signal that session data has changed.
 
-        CLI: no-op (the process exits after each command).
         TUI: triggers a refresh of the Today and Week panels.
+        Tests: increments a counter for assertion.
         """
         ...
 
     def on_day_stopped(self, status: DayStatus) -> None:
         """Signal that the last session of the day has been closed.
 
-        CLI: prints the end-of-day summary panel.
         TUI: no-op (the Today panel already shows live data).
+        Tests: no-op (not relevant for smoke tests).
         """
         ...
 
     def show_log(self, week_days: dict, week_num: int, year: int) -> None:
         """Display a full week log.
 
-        CLI: prints the log panel to stdout.
         TUI: pushes the LogScreen overlay.
+        Tests: records the call arguments for assertion.
         """
         ...
 
     def show_promark(self, week_days: dict, week_num: int, year: int) -> None:
         """Display the Promark table for a week.
 
-        CLI: prints the Promark panel to stdout.
         TUI: writes the Promark panel to the Output panel.
+        Tests: records the call arguments for assertion.
         """
         ...
-
-
-class CliAppContext:
-    """AppContext for one-shot CLI mode.
-
-    Delivers messages via print() and renders panels to stdout through the
-    Printer module. All signals (on_session_changed, on_day_stopped) are
-    no-ops because the process exits after each command anyway.
-    """
-
-    def info(self, message: str) -> None:
-        print(message)
-
-    def warning(self, message: str) -> None:
-        print(message)
-
-    def error(self, message: str) -> None:
-        print(message)
-
-    def on_session_changed(self) -> None:
-        pass  # CLI exits after each command — no live panels to refresh.
-
-    def on_day_stopped(self, status: DayStatus) -> None:
-        from Printer import print_day_summary
-        print_day_summary(status)
-
-    def show_log(self, week_days: dict, week_num: int, year: int) -> None:
-        from Printer import print_log_week
-        print_log_week(week_days, week_num, year)
-
-    def show_promark(self, week_days: dict, week_num: int, year: int) -> None:
-        from Printer import print_promark_week
-        print_promark_week(week_days, week_num, year)

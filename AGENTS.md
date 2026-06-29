@@ -79,6 +79,7 @@ Valid states:
 
 ```text
 Brainstorming
+Refinement
 Proposed
 Approved
 Implemented
@@ -119,7 +120,10 @@ Update this section every time the status changes.
 Example:
 
 > **Current status:** Brainstorming
-> **To reach Proposed:** Consolidate brainstorm notes into a concrete Requirements list and Non-Goals section.
+> **To reach Refinement:** Brainstorm notes are rich enough to evaluate — move to critical review mode.
+
+> **Current status:** Refinement
+> **To reach Proposed:** All requirements are specific, Non-Goals are explicit, and no new ideas are being added.
 
 > **Current status:** Proposed
 > **To reach Approved:** User reviews and explicitly approves the design.
@@ -175,6 +179,40 @@ Discussion history and ideas.
 
 Ideas that may be useful later but are NOT approved work.
 ```
+
+---
+
+## AI Behavior by Feature Status
+
+When assisting with a feature document, the LLM should adjust its approach based on the current status.
+
+### Brainstorming
+
+**Goal:** Generate a wide solution space. Do not self-filter.
+
+- Explore multiple approaches, even contradictory ones
+- Raise adjacent problems the user may not have considered
+- Suggest unconventional or non-obvious solutions
+- Do not yet evaluate feasibility or scope
+- Do not produce a Requirements list — that comes later
+- Capture all ideas under `## Brainstorm Notes`
+
+### Refinement
+
+**Goal:** Critically evaluate the brainstorm and converge on what is realistic.
+
+- Review `## Brainstorm Notes` and identify what is feasible given the project's scope and constraints
+- Flag ideas that are vague, overly ambitious, or out of scope
+- Begin drafting a concrete `## Requirements` list
+- Begin drafting `## Non-Goals` — explicit exclusions are as important as inclusions
+- Prefer the simplest solution that satisfies the core need
+- Do not invent new ideas; work only with what was captured during brainstorming
+
+**To reach Proposed:** All requirements must be specific enough that a developer could implement them without further design discussion.
+
+### Proposed and beyond
+
+Normal focused behavior — answer precisely, avoid speculation, stay within approved scope.
 
 ---
 
@@ -312,6 +350,105 @@ When proposing or accepting a dependency, document:
 * Maintenance implications
 
 Avoid dependency sprawl — each dependency must justify its inclusion. But do not reject a proven library simply to avoid a dependency.
+
+---
+
+# Database Conventions
+
+Every new SQLite table introduced to the project must follow the conventions already established by the `sessions` / `sessions_h` pair. These rules ensure a consistent, auditable data layer.
+
+## Table Naming
+
+| Purpose | Naming pattern |
+|---------|---------------|
+| Main data table | `<noun>` (e.g. `sessions`, `settings`) |
+| History / shadow table | `<noun>_h` (e.g. `sessions_h`, `settings_h`) |
+
+## History / Shadow Table
+
+Every main table must have a corresponding `_h` shadow table that records every INSERT, UPDATE, and DELETE automatically via SQLite triggers. Application code **never writes to `_h` tables directly**.
+
+The `_h` table always has these extra columns prepended:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `h_id` | INTEGER | Primary key, auto-incremented |
+| `h_operation` | TEXT | `'I'` Insert · `'U'` Update · `'D'` Delete |
+| `h_timestamp` | TEXT | ISO-8601 UTC datetime (`datetime('now')`) |
+
+All remaining columns mirror the main table exactly (same names, same types, same nullability — except primary-key constraints are dropped).
+
+Example for a hypothetical `widgets` table:
+
+```sql
+CREATE TABLE IF NOT EXISTS widgets (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name  TEXT NOT NULL,
+    value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS widgets_h (
+    h_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    h_operation TEXT    NOT NULL,
+    h_timestamp TEXT    NOT NULL,
+    id          INTEGER NOT NULL,
+    name        TEXT    NOT NULL,
+    value       TEXT
+);
+```
+
+## Triggers
+
+Three triggers must be created — one for each DML operation. All use `CREATE TRIGGER IF NOT EXISTS` and fire `AFTER` the statement:
+
+```sql
+CREATE TRIGGER IF NOT EXISTS widgets_after_insert
+AFTER INSERT ON widgets
+BEGIN
+    INSERT INTO widgets_h (h_operation, h_timestamp, id, name, value)
+    VALUES ('I', datetime('now'), NEW.id, NEW.name, NEW.value);
+END;
+
+CREATE TRIGGER IF NOT EXISTS widgets_after_update
+AFTER UPDATE ON widgets
+BEGIN
+    INSERT INTO widgets_h (h_operation, h_timestamp, id, name, value)
+    VALUES ('U', datetime('now'), NEW.id, NEW.name, NEW.value);
+END;
+
+CREATE TRIGGER IF NOT EXISTS widgets_after_delete
+AFTER DELETE ON widgets
+BEGIN
+    INSERT INTO widgets_h (h_operation, h_timestamp, id, name, value)
+    VALUES ('D', datetime('now'), OLD.id, OLD.name, OLD.value);
+END;
+```
+
+Key rules:
+- DELETE triggers reference `OLD.*`; INSERT and UPDATE triggers reference `NEW.*`.
+- `h_timestamp` is always UTC — it is an audit timestamp, not a user-visible time.
+- Triggers fire inside the same transaction as the originating statement, so history rows are committed or rolled back atomically.
+
+## Schema Location
+
+All DDL (main table, history table, and triggers) belongs in `Storage.py` inside the `create_schema()` function. This function is called once at application startup and uses `IF NOT EXISTS` throughout, making it a safe no-op after the first run.
+
+No DDL may be placed outside `create_schema()`.
+
+## Layer Rules
+
+The data access layer follows a strict dependency chain — no layer may skip a level:
+
+```
+Commands.py  →  Storage.py  →  db/repository.py  →  db/connection.py
+```
+
+- `Commands.py` calls `Storage.py` functions only. It never imports from `db/`.
+- `Storage.py` calls `db/repository.py` helpers only (except `create_schema`, which uses `Connection` directly to batch all DDL in one transaction).
+- `db/repository.py` calls `db/connection.py` only.
+- Nothing outside `db/` imports from `db/` except `Storage.py`.
+
+When a new domain area is large enough (e.g. settings, epics), it may live in a separate `*Storage.py` module (e.g. `SettingsStorage.py`) that follows the same rules.
 
 ---
 

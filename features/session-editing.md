@@ -12,7 +12,8 @@ after the fact — wrong epic entered at `start`, or a session left without a ta
 
 ## Prerequisites
 
-- **Textual TUI** feature must be `Completed` before this work begins.
+- **Command Redesign** (`features/command-redesign.md`) should be `Completed` before this work begins, so the stable command model is in place for session editing to build on.
+- Specifically: if `task -s N` is removed during command redesign, inline session editing becomes the *only* way to correct a session's task after the fact — the two features must not leave a gap.
 
 ---
 
@@ -30,7 +31,10 @@ _Not yet defined._
 
 ## Manual Changes
 
-_None yet._
+### 2026-06-26
+- Sequencing clarified: this feature follows `features/command-redesign.md`. A merge into command-redesign was considered and rejected — scope is large enough to warrant its own design cycle.
+- Prerequisites updated to reference command-redesign instead of the original "Textual TUI" feature.
+- **Decision (2026-06-26):** The `task -s N` flag is explicitly retained in the command redesign until this feature (`session-editing`) is implemented. Once inline session editing ships, `task -s N` becomes redundant and can be removed as a cleanup step in command-redesign. The two features must not leave a gap: at all times there must be at least one way for the user to correct a session's Task/Epic after the fact.
 
 ---
 

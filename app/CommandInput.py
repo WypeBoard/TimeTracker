@@ -1,6 +1,6 @@
 """CommandInput — the command bar at the bottom of the TUI.
 
-Accepts the same command syntax as the one-shot CLI:
+Accepted commands:
   start [hhmm] [epic]
   pause [hhmm]
   stop  [hhmm]

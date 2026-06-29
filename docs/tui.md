@@ -2,18 +2,16 @@
 
 ## Purpose
 
-The Textual TUI provides a persistent, full-screen dashboard that stays open
-all day. It replaces the old numbered prompt (which required re-running the
-script to check status). All time-tracking commands are available from a
-single screen without leaving the application.
+The Textual TUI is the sole interaction surface for TimeTracker. It provides a
+persistent, full-screen dashboard that stays open all day. All time-tracking
+commands are entered through the command bar at the bottom of the screen.
 
 ---
 
 ## Current Behaviour
 
-Running `python TimeTracker.py` with **no arguments** launches the TUI.
-Running it **with arguments** continues to work as a one-shot CLI — no
-change for scripts and aliases.
+Running `python TimeTracker.py` always launches the TUI. There is no one-shot
+CLI mode — all commands are entered from within the running application.
 
 ---
 
@@ -143,8 +141,8 @@ write here — it refreshes the Today panel directly.
 
 ## Commands
 
-All commands accepted by the one-shot CLI are available here with the same
-syntax. See `docs/commands.md` for full reference.
+All commands are entered via the command bar. See `docs/commands.md` for full
+reference including syntax, arguments, and output examples.
 
 | Command | Behaviour in TUI |
 |---------|-----------------|

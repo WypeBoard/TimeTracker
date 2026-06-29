@@ -1,6 +1,14 @@
 # Feature: TUI-Only Interaction
 
-Status: Brainstorming
+Status: Superseded
+
+> **Superseded on 2026-06-26.**
+> This feature has been split into three focused documents:
+> - `features/tui-only-mode.md` — TUI as the exclusive interaction surface
+> - `features/command-redesign.md` — Command set redesign for TUI-first
+> - `features/ui-layout-redesign.md` — Four-quadrant layout redesign
+>
+> The brainstorm notes below are preserved as historical context.
 
 ## Purpose
 
