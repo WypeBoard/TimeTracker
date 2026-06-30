@@ -1,6 +1,6 @@
 # Feature: Command Redesign
 
-Status: Approved
+Status: Brainstorming
 
 ## Purpose
 
@@ -13,10 +13,18 @@ In the current application, commands are typed as free-text CLI-style strings in
 ## Prerequisites
 
 - **TUI-Only Mode** (`features/tui-only-mode.md`) must be `Approved` before this work begins, so the target interaction model is stable.
+- **Epic Catalog** (`features/epic-catalog.md`) must be `Approved` before this work begins, so the `task` command surface can be designed against a stable data model for epics and task→epic mappings.
 
 ---
 
+## Next Step
+
+> **Current status:** Brainstorming
+> **To reach Refinement:** Resolve the three open questions from the 2026-06-29 session (promark fate, past-week entry ergonomics, task command post-epic-catalog), and confirm whether this feature is fully blocked on epic-catalog or can proceed in parallel for the non-`task` portions.
+
 ## Requirements
+
+> ⚠️ **Note:** This section reflects the requirements from the previous `Approved` cycle. The feature has been reverted to `Brainstorming`. These requirements are preserved as historical context and are under active review. They are **not** binding.
 
 - Commands: `start`, `stop`, `resume`, `task`, `log`, `help`.
 - `add` is a permanent alias for `start`; `pause` is a permanent alias for `stop`. Both aliases are fully supported and appear alongside their primary names in the `help` overlay.
@@ -35,6 +43,13 @@ In the current application, commands are typed as free-text CLI-style strings in
 
 ## Manual Changes
 
+### 2026-06-29
+- Status reverted from `Approved` back to `Brainstorming`.
+- **Concern raised:** Removing `promark` eliminates the only mechanism for producing a formatted time-registration export. The "workplace-specific" label was too narrow — the *need* to export a weekly summary is general; only the *format* is opinionated. This decision is under review.
+- **Concern raised:** Even with `log` retained, the previous approval cycle did not fully address the Monday catch-up scenario — viewing past weeks and *entering* sessions on past dates are related but distinct needs. The `start -d` flag alone may not be sufficient UX.
+- **Added prerequisite:** `features/epic-catalog.md` must be `Approved` before this feature proceeds. The `task` command cannot be fully designed until the epic/task-catalog data model is stable.
+- Previous Requirements and consolidated command inventory are preserved below as historical context. They are under review and not binding at `Brainstorming` status.
+
 ### 2026-06-26
 - Created from the split of `tui-only-interaction.md`.
 - User flagged `features/session-editing.md` as a candidate for merging into this feature, because session editing is fundamentally about how the user issues corrections via the TUI command surface.
@@ -51,6 +66,36 @@ In the current application, commands are typed as free-text CLI-style strings in
 | `docs/tui.md` | Update | Update Commands table and keyboard reference to match new command set |
 
 ## Brainstorm Notes
+
+### 2026-06-29 — Reopen: promark, past-week entry, and epic-catalog dependency
+
+**Why the feature was reverted:**
+
+Two concerns surfaced that were not fully resolved in the previous cycle:
+
+1. **`promark` removal** — The justification was "workplace-specific", but the underlying need — producing a structured weekly time-registration export — is a general and essential workflow. Without it, there is no mechanism to produce a summary a user can submit to an external time-tracking system. The format may be opinionated, but the function is not optional.
+
+2. **Past-week session entry** — `log` with Left/Right navigation lets the user *view* past weeks. `start -d yyyymmdd` lets the user *add* a session to a past date. But the Monday catch-up workflow — entering a full week's sessions from memory on the following Monday — is cumbersome with today's command-bar-only entry. The interaction model for past-day entry may need more thought.
+
+3. **Epic Catalog dependency** — The `task` command's entire surface changes once epic-catalog exists. Designing `task` command arguments, validation, and TUI flows without knowing the catalog data model is premature.
+
+**Open questions (new round):**
+
+1. **`promark` generalisation** — Three options:
+   - *Retain as-is*: Accept it is opinionated. It works; it is tested; removing it actively harms the user's workflow.
+   - *Rename to `report` or `export`*: Keep the capability but give it a more neutral name. The format stays the same for now, but the door opens for future format options.
+   - *Make format configurable*: Tie into `features/configuration-view.md` — the output format is a setting, not hardcoded. Higher complexity; deferred.
+
+2. **Past-week entry ergonomics** — Options:
+   - *`start -d` is sufficient*: The user types `start 0900 TASK-123 -d 20260623` for each session. Verbose but unambiguous.
+   - *Log overlay entry*: The Log overlay (opened via `log`) adds an "add session" action when browsing a past week. Overlaps heavily with `features/session-editing.md` — scope risk.
+   - *`log` accepts a date argument*: `log 20260623` jumps directly to the week containing that date rather than requiring Left/Right navigation. Low-cost improvement to discoverability.
+
+3. **`task` command post-epic-catalog** — Once the catalog exists, `task TASK-123` can auto-resolve the epic from the catalog. If the task is unknown, a TUI picker opens (per `features/epic-catalog.md` brainstorm notes). Does this change the `task` command's argument signature? Does `-s N` still make sense in that world?
+
+4. **Sequencing with Epic Catalog** — Should this feature be fully blocked until epic-catalog reaches `Approved`, or can the non-`task` parts of the command redesign proceed independently?
+
+---
 
 ### 2026-06-26 — Initial capture
 
