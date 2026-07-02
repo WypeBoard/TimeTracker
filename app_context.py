@@ -77,3 +77,22 @@ class AppContext(Protocol):
         Tests: records the call arguments for assertion.
         """
         ...
+
+    def on_new_task(self, task_id: str) -> None:
+        """Signal that a task with no Epic link was used.
+
+        Called after a session is saved when the task identifier has no entry
+        in task_catalog.
+
+        TUI: pushes the EpicModal so the user can link the task to an Epic.
+        Tests: records the task_id for assertion.
+        """
+        ...
+
+    def show_epic_summary(self, week_num: int, year: int) -> None:
+        """Display the Epic summary overlay for the given ISO week.
+
+        TUI: pushes the EpicSummaryScreen overlay.
+        Tests: records the call arguments for assertion.
+        """
+        ...

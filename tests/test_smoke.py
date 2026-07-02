@@ -32,6 +32,7 @@ from Storage import create_schema, get_today_sessions, get_open_session
 from Commands import (
     cmd_start, cmd_pause, cmd_stop, cmd_resume, cmd_restart,
     cmd_task, cmd_log, _build_day_status, _session_hours,
+    cmd_epic_add, cmd_epic_list, cmd_epic_summary,
 )
 import db.repository as repo
 
@@ -47,8 +48,10 @@ class RecordingContext:
         self.infos: list[str] = []
         self.warnings: list[str] = []
         self.errors: list[str] = []
-        self.log_calls: list[tuple] = []      # (week_days, week_num, year)
-        self.promark_calls: list[tuple] = []  # (week_days, week_num, year)
+        self.log_calls: list[tuple] = []           # (week_days, week_num, year)
+        self.promark_calls: list[tuple] = []       # (week_days, week_num, year)
+        self.new_task_calls: list[str] = []        # task_ids passed to on_new_task
+        self.epic_summary_calls: list[tuple] = []  # (week_num, year)
         self.session_changed_count: int = 0
 
     def info(self, message: str) -> None:
@@ -71,6 +74,12 @@ class RecordingContext:
 
     def show_promark(self, week_days: dict, week_num: int, year: int) -> None:
         self.promark_calls.append((week_days, week_num, year))
+
+    def on_new_task(self, task_id: str) -> None:
+        self.new_task_calls.append(task_id)
+
+    def show_epic_summary(self, week_num: int, year: int) -> None:
+        self.epic_summary_calls.append((week_num, year))
 
 
 # ---------------------------------------------------------------------------
@@ -330,3 +339,194 @@ def test_restart_is_deprecated_alias(db):
     open_sess = get_open_session()
     assert open_sess is not None
     assert open_sess[3] == "Epic-42"
+
+
+# ---------------------------------------------------------------------------
+# Epic commands
+# ---------------------------------------------------------------------------
+
+def test_epic_add_and_list(db):
+    """epic add creates Epics; epic list returns them alphabetically."""
+    ctx = RecordingContext()
+
+    cmd_epic_add(ctx, "Platform Team")
+    cmd_epic_add(ctx, "Mobile App")
+
+    assert not ctx.errors, f"Unexpected errors: {ctx.errors}"
+    assert any("Platform Team" in m for m in ctx.infos)
+    assert any("Mobile App" in m for m in ctx.infos)
+
+    ctx2 = RecordingContext()
+    cmd_epic_list(ctx2)
+
+    assert len(ctx2.infos) == 1
+    listing = ctx2.infos[0]
+    # "Mobile App" comes before "Platform Team" alphabetically.
+    assert listing.index("Mobile App") < listing.index("Platform Team"), (
+        "epic list should be sorted alphabetically"
+    )
+
+
+def test_epic_add_duplicate(db):
+    """epic add with a duplicate name prints a warning and writes nothing."""
+    ctx = RecordingContext()
+
+    cmd_epic_add(ctx, "Platform Team")
+    cmd_epic_add(ctx, "Platform Team")
+
+    assert ctx.warnings, "Should have warned about duplicate name"
+    assert "already exists" in ctx.warnings[-1]
+
+    from EpicStorage import list_epics
+    assert len(list_epics()) == 1, "Only one Epic should exist after the duplicate attempt"
+
+
+def test_epic_list_empty(db):
+    """epic list with no Epics prints an informational message."""
+    ctx = RecordingContext()
+    cmd_epic_list(ctx)
+
+    assert not ctx.errors
+    assert ctx.infos, "epic list should output something even when empty"
+
+
+def test_on_new_task_triggered_for_unknown_task(db):
+    """start with an unknown task calls on_new_task."""
+    ctx = RecordingContext()
+    cmd_start(ctx, "08:00", "TASK-999")
+
+    assert "TASK-999" in ctx.new_task_calls, (
+        "on_new_task should be called when the task has no task_catalog entry"
+    )
+
+
+def test_on_new_task_not_triggered_for_known_task(db):
+    """start with a task already in task_catalog does not call on_new_task."""
+    from EpicStorage import add_epic, link_task_to_epic
+
+    epic_id = add_epic("Platform")
+    link_task_to_epic("TASK-123", epic_id)
+
+    ctx = RecordingContext()
+    cmd_start(ctx, "08:00", "TASK-123")
+
+    assert ctx.new_task_calls == [], (
+        "on_new_task should not be called when the task is already linked"
+    )
+
+
+def test_on_new_task_triggered_for_task_command(db):
+    """cmd_task with an unknown task calls on_new_task."""
+    ctx = RecordingContext()
+    today = date.today().strftime("%Y-%m-%d")
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '09:00', '10:00', '')",
+        (today,),
+    )
+
+    cmd_task(ctx, "TASK-789")
+    assert "TASK-789" in ctx.new_task_calls
+
+
+def test_epic_summary_data_groups_correctly(db):
+    """get_epic_summary_data groups known tasks under Epic and unknowns under None."""
+    from EpicStorage import add_epic, link_task_to_epic, get_epic_summary_data
+
+    today = date.today()
+    week_num = today.isocalendar().week
+    year = today.isocalendar().year
+    today_str = today.strftime("%Y-%m-%d")
+
+    # Two sessions: TASK-1 linked, TASK-2 unlinked.
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '08:00', '10:00', 'TASK-1')",
+        (today_str,),
+    )
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '10:00', '12:00', 'TASK-2')",
+        (today_str,),
+    )
+
+    epic_id = add_epic("Platform")
+    link_task_to_epic("TASK-1", epic_id)
+
+    data = get_epic_summary_data(week_num, year)
+
+    # Should have two rows: one for Platform/TASK-1 and one for None/(Misc)/TASK-2.
+    # Each row is (date_str, epic_name_or_None, task_id, total_minutes).
+    assert len(data) == 2, f"Expected 2 rows, got {len(data)}: {data}"
+
+    epic_names = [row[1] for row in data]
+    task_ids = [row[2] for row in data]
+
+    assert "Platform" in epic_names, "TASK-1 should be under Platform"
+    assert None in epic_names, "TASK-2 should be under (Misc) — i.e. None"
+    assert "TASK-1" in task_ids
+    assert "TASK-2" in task_ids
+
+    # Verify minutes: TASK-1 is 2h = 120 min, TASK-2 is 2h = 120 min.
+    minutes_by_task = {row[2]: row[3] for row in data}
+    assert minutes_by_task["TASK-1"] == 120
+    assert minutes_by_task["TASK-2"] == 120
+
+
+def test_epic_summary_named_before_misc(db):
+    """get_epic_summary_data returns named Epics before (Misc)."""
+    from EpicStorage import add_epic, link_task_to_epic, get_epic_summary_data
+
+    today = date.today()
+    week_num = today.isocalendar().week
+    year = today.isocalendar().year
+    today_str = today.strftime("%Y-%m-%d")
+
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '08:00', '09:00', 'TASK-X')",
+        (today_str,),
+    )
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '09:00', '10:00', 'TASK-MISC')",
+        (today_str,),
+    )
+
+    epic_id = add_epic("Zebra Epic")
+    link_task_to_epic("TASK-X", epic_id)
+
+    data = get_epic_summary_data(week_num, year)
+    # Each row is (date_str, epic_name_or_None, task_id, total_minutes).
+    epic_names = [row[1] for row in data]
+
+    assert epic_names[0] == "Zebra Epic", "Named Epic should come first"
+    assert epic_names[-1] is None, "(Misc) should be last"
+
+
+def test_epic_summary_empty_week(db):
+    """cmd_epic_summary delegates to show_epic_summary with no error."""
+    ctx = RecordingContext()
+    cmd_epic_summary(ctx)
+
+    assert not ctx.errors
+    assert len(ctx.epic_summary_calls) == 1
+
+    week_num, year = ctx.epic_summary_calls[0]
+    today_iso = date.today().isocalendar()
+    assert week_num == today_iso.week
+    assert year == today_iso.year
+
+
+def test_epic_summary_excludes_sessions_without_task(db):
+    """Sessions with no task label are not included in the epic summary."""
+    from EpicStorage import get_epic_summary_data
+
+    today = date.today()
+    week_num = today.isocalendar().week
+    year = today.isocalendar().year
+    today_str = today.strftime("%Y-%m-%d")
+
+    # Session with empty task.
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '08:00', '10:00', '')",
+        (today_str,),
+    )
+
+    data = get_epic_summary_data(week_num, year)
+    assert data == [], "Sessions with no task should not appear in epic summary data"

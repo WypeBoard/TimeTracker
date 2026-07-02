@@ -19,6 +19,10 @@ from Storage import (
     open_session, close_session, update_session_task,
     get_open_session, get_today_sessions, read_log,
 )
+from EpicStorage import (
+    add_epic, list_epics, get_task_epic,
+    get_epic_summary_data,
+)
 from Promark import promark_entry
 from Printer import DayStatus, print_status
 
@@ -46,6 +50,9 @@ def cmd_start(ctx: AppContext, time_override: str | None = None, epic: str | Non
     note = " (manually set)" if time_override else ""
     ctx.info(f"▶  Started at {time_str}{epic_suffix}{note}")
     ctx.on_session_changed()
+
+    # Notify if the task has no Epic link yet so the TUI can show the modal.
+    _notify_if_new_task(ctx, epic)
 
 
 def cmd_pause(ctx: AppContext, time_override: str | None = None) -> None:
@@ -110,6 +117,9 @@ def cmd_resume(ctx: AppContext, time_override: str | None = None) -> None:
     ctx.info(f"▶  Started #{new_num} — {time_str}{carry_note}")
     ctx.on_session_changed()
 
+    # Notify if the carried task has no Epic link yet.
+    _notify_if_new_task(ctx, last_task)
+
 
 def cmd_restart(ctx: AppContext, time_override: str | None = None) -> None:
     """Deprecated alias for cmd_resume.
@@ -168,6 +178,9 @@ def cmd_task(ctx: AppContext, epic: str, session_num: int | None = None) -> None
     ctx.info(f"📌  #{target_idx}  {epic}  saved.")
     ctx.on_session_changed()
 
+    # Notify if the task has no Epic link yet so the TUI can show the modal.
+    _notify_if_new_task(ctx, epic)
+
 
 def cmd_log(ctx: AppContext, week_str: str | None = None) -> None:
     """Show a full week's sessions with task labels."""
@@ -201,6 +214,33 @@ def cmd_promark(ctx: AppContext, week_str: str | None = None) -> None:
     }
 
     ctx.show_promark(week_days, target_week, target_year)
+
+
+def cmd_epic_add(ctx: AppContext, name: str) -> None:
+    """Create a new Epic with the given free-text name."""
+    result = add_epic(name)
+    if result is None:
+        ctx.warning("⚠  An Epic with that name already exists.")
+    else:
+        ctx.info(f"✅  Epic '{name}' created.")
+
+
+def cmd_epic_list(ctx: AppContext) -> None:
+    """List all defined Epics, sorted alphabetically by name."""
+    epics = list_epics()
+    if not epics:
+        ctx.info("No Epics defined yet. Use 'epic add <name>' to create one.")
+        return
+    lines = [f"  {epic_id}  {name}" for epic_id, name in epics]
+    ctx.info("\n".join(lines))
+
+
+def cmd_epic_summary(ctx: AppContext, week_str: str | None = None) -> None:
+    """Open the Epic summary overlay for the target week."""
+    today_iso = date.today().isocalendar()
+    target_week = today_iso.week if week_str is None else int(week_str[1:])
+    target_year = today_iso.year
+    ctx.show_epic_summary(target_week, target_year)
 
 
 # ---------------------------------------------------------------------------
@@ -274,3 +314,15 @@ def _close_session(ctx: AppContext, time_override: str | None = None) -> bool:
     note = " (manually set)" if time_override else ""
     ctx.info(f"⏸  Closed — {date_val}  {start_val} → {time_str}{note}")
     return True
+
+
+def _notify_if_new_task(ctx: AppContext, task: str | None) -> None:
+    """Notify the context if task is non-empty and has no Epic link.
+
+    Called after saving a session so the TUI can show the EpicModal.
+    In test mode (RecordingContext), on_new_task simply records the call.
+    """
+    if not task:
+        return
+    if get_task_epic(task) is None:
+        ctx.on_new_task(task)

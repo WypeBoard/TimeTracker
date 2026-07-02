@@ -146,14 +146,17 @@ reference including syntax, arguments, and output examples.
 
 | Command | Behaviour in TUI |
 |---------|-----------------|
-| `start [hhmm] [epic]` | Opens session; confirmation in Output |
+| `start [hhmm] [epic]` | Opens session; confirmation in Output; shows Task–Epic modal if task is new |
 | `pause [hhmm]` | Closes session; confirmation in Output |
 | `stop [hhmm]` | Closes session; all panels refresh |
-| `resume [hhmm]` | Close + reopen, carrying epic; confirmation in Output |
-| `task <epic> [-s N]` | Tags session; confirmation in Output |
+| `resume [hhmm]` | Close + reopen, carrying epic; shows Task–Epic modal if carried task is new |
+| `task <epic> [-s N]` | Tags session; confirmation in Output; shows Task–Epic modal if task is new |
 | `status` | Refreshes Today panel immediately (no Output message) |
 | `log [wNN]` | Opens the Log overlay |
 | `promark [wNN]` | Writes the Promark table to Output |
+| `epic add <name>` | Creates a new Epic; confirmation in Output |
+| `epic list` | Lists all Epics alphabetically in Output |
+| `epic summary [wNN]` | Opens the Epic Summary overlay |
 
 ---
 
@@ -185,17 +188,102 @@ Navigation:
 
 ---
 
+## Task–Epic Modal
+
+Appears automatically when a task identifier used in `start`, `resume`, or
+`task` has no entry in the Epic Catalog (`task_catalog`). The modal fires at
+most once per task — after a link is written it does not reappear.
+
+**State 1 — Epic selection list:**
+
+```
+┌─ New task: TASK-789 ──────────────────────────────────────┐
+│  Select an Epic to link this task, or press Esc to skip.  │
+│                                                           │
+│  ► Platform Team                                          │
+│    Mobile App                                             │
+│                                                           │
+│  [ + New epic… ]                                          │
+│                                                           │
+│  [↑↓] navigate   [Enter] select   [Esc] save as (Misc)   │
+└───────────────────────────────────────────────────────────┘
+```
+
+- `↑` / `↓` navigate; `Enter` confirms the selection.
+- Selecting an existing Epic writes the `task_catalog` entry and closes the modal.
+- Selecting `[ + New epic… ]` transitions to State 2.
+- `Esc` closes without linking; the task is treated as `(Misc)` in `epic summary`.
+
+**State 2 — Inline Epic creation:**
+
+```
+┌─ New task: TASK-789 ──────────────────────────────────────┐
+│  New Epic name:                                           │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │ Platform Team_                                    │   │
+│  └───────────────────────────────────────────────────┘   │
+│                                                           │
+│  [Enter] create & link   [Esc] back to list               │
+└───────────────────────────────────────────────────────────┘
+```
+
+- `Enter` with a non-empty name: creates the Epic, writes `task_catalog`, closes modal.
+- `Enter` with an empty name: no-op (stays open).
+- Duplicate name: inline error shown; stays in State 2.
+- `Esc`: returns to State 1.
+
+---
+
+## Epic Summary Overlay
+
+Opened by `epic summary [wNN]`. Shows time grouped by **day first**, then by
+Epic within each day. Navigation matches the Log overlay.
+
+```
+┌─ 📊  Epic Summary — Week 26  (Jun 16 – Jun 20) ──────────────────────────┐
+│                                                                            │
+│  Monday Jun 16                                     12:30                  │
+│    Platform Team                                   10:00                  │
+│      TASK-123                                       7:30                  │
+│      TASK-456                                       2:30                  │
+│    (Misc)                                           2:30                  │
+│      TASK-789                                       2:30                  │
+│  Tuesday Jun 17                                     4:15                  │
+│    Platform Team                                    4:15                  │
+│      TASK-123                                       4:15                  │
+│                                                                            │
+│  Week total:  16:45                                                        │
+│                                                                            │
+│  [Esc] close   [←] prev week   [→] next week                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+- Each day is a bold header line with the daily total.
+- Epics are indented under their day with a per-day Epic total.
+- Tasks are double-indented under their Epic with per-day task totals.
+- Tasks with no `task_catalog` entry are grouped under `(Misc)` within that day.
+- `(Misc)` is a virtual group — it is not stored and does not appear in
+  `epic list`.
+- Hours in base-60 clock format (`H:MM`).
+- `←` / `→` navigate weeks; `Esc` closes.
+
+---
+
 ## Keyboard Reference
 
 | Key | Action |
 |-----|--------|
 | `Enter` | Submit command |
 | `↑` / `↓` | Browse command history (within the session) |
-| `Esc` | Clear command input (or close Log overlay) |
+| `Esc` | Clear command input (or close overlay) |
 | `Tab` / `Shift+Tab` | Cycle focus between panels |
 | `l` | Open the Log overlay for the current week |
 | `ctrl+q` | Quit the TUI |
-| `←` / `→` (in Log overlay) | Navigate between weeks |
+| `←` / `→` (in Log / Epic Summary overlay) | Navigate between weeks |
+| `↑` / `↓` (in Task–Epic modal) | Navigate the Epic list |
+| `Enter` (in Task–Epic modal) | Select Epic or confirm new name |
+| `Esc` (in Task–Epic modal State 1) | Skip linking (save as Misc) |
+| `Esc` (in Task–Epic modal State 2) | Return to Epic selection list |
 
 ---
 
@@ -232,3 +320,4 @@ The Output panel does not use a timer — it updates only in response to command
 - `features/tui-dashboard-enhancements.md` — design document for the dashboard
   enhancements (WeekPanel redesign, TaskSummaryPanel, ProgressStrip).
 - `docs/commands.md` — full command reference.
+- `docs/epic-catalog.md` — Epic Catalog: managing Epics, task–Epic linking, and the modal.

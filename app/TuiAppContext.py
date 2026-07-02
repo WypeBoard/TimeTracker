@@ -54,6 +54,16 @@ class TuiAppContext:
         panel = build_promark_panel(week_days, week_num, year)
         self._get_output().write(panel)
 
+    def on_new_task(self, task_id: str) -> None:
+        """Push the EpicModal so the user can link the task to an Epic."""
+        from app.EpicModal import EpicModal
+        self._app.push_screen(EpicModal(task_id))
+
+    def show_epic_summary(self, week_num: int, year: int) -> None:
+        """Push the EpicSummaryScreen overlay."""
+        from app.EpicSummaryScreen import EpicSummaryScreen
+        self._app.push_screen(EpicSummaryScreen(week_num, year))
+
     # ------------------------------------------------------------------ #
 
     def _get_output(self):

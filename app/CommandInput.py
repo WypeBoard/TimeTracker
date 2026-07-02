@@ -9,6 +9,9 @@ Accepted commands:
   task <epic> [-s N]
   log [wNN]
   promark [wNN]
+  epic add <name>
+  epic list
+  epic summary [wNN]
   status                  (refreshes TodayPanel instead of printing)
 
 Supports:
@@ -147,7 +150,40 @@ class CommandInput(Input):
             self.app.exit()
             return
 
+        if command == "epic":
+            self._dispatch_epic(args)
+            return
+
         self._ctx.error(f"⚠  Unknown command: {command!r}")
+
+    def _dispatch_epic(self, args: list[str]) -> None:
+        """Parse and dispatch 'epic <subcommand> [...]'."""
+        if not args:
+            self._ctx.error("⚠  Usage: epic add <name> | epic list | epic summary [wNN]")
+            return
+
+        subcommand = args[0].lower()
+        rest = args[1:]
+
+        if subcommand == "add":
+            if not rest:
+                self._ctx.error("⚠  Usage: epic add <name>")
+                return
+            name = " ".join(rest)
+            from Commands import cmd_epic_add
+            cmd_epic_add(self._ctx, name)
+
+        elif subcommand == "list":
+            from Commands import cmd_epic_list
+            cmd_epic_list(self._ctx)
+
+        elif subcommand == "summary":
+            week_str = _parse_week_arg(rest[0]) if rest else None
+            from Commands import cmd_epic_summary
+            cmd_epic_summary(self._ctx, week_str)
+
+        else:
+            self._ctx.error(f"⚠  Unknown epic subcommand: {subcommand!r}")
 
 
 # ---------------------------------------------------------------------------

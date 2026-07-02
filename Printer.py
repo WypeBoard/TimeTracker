@@ -352,3 +352,133 @@ def print_promark_week(week_days: dict, week_num: int, year: int) -> None:
     """Print Mon–Fri Promark entries for the given ISO week as a rich table."""
     console.print(build_promark_panel(week_days, week_num, year))
     console.print()
+
+
+# ---------------------------------------------------------------------------
+# Epic summary
+# ---------------------------------------------------------------------------
+
+def _minutes_to_clock(minutes: int) -> str:
+    """Convert total minutes to H:MM clock format (e.g. 90 → '1:30')."""
+    h, m = divmod(max(minutes, 0), 60)
+    return f"{h}:{m:02d}"
+
+
+def build_epic_summary_panel(data: list[tuple], week_num: int, year: int) -> Panel:
+    """Build the Rich Panel for the Epic summary overlay.
+
+    The layout groups time by day first, then by Epic within each day:
+
+        Monday Jun 16            12:30
+          Platform Team          10:00
+            TASK-123              7:30
+          (Misc)                  2:30
+            TASK-789              2:30
+
+    Args:
+        data: Rows returned by EpicStorage.get_epic_summary_data —
+              each row is (date_str, epic_name_or_None, task_id, total_minutes).
+              None means the task has no task_catalog entry and belongs
+              to the virtual '(Misc)' group.
+        week_num: ISO week number.
+        year: ISO year.
+    """
+    jan4 = date(year, 1, 4)
+    week1_monday = jan4 - timedelta(days=jan4.weekday())
+    monday = week1_monday + timedelta(weeks=week_num - 1)
+
+    title = (
+        f"📊  Epic Summary — Week {week_num}"
+        f"  [dim]({monday.strftime('%b %d')} – "
+        f"{(monday + timedelta(days=4)).strftime('%b %d')})[/dim]"
+    )
+
+    # Build ordered structure preserving the SQL sort order (date → epic → task).
+    # day_order: list of date strings in order of first appearance.
+    # day_epic_order: per-date ordered list of epic display names.
+    # epic_task_data: (date_str, epic_display) → [(task_id, minutes)].
+    day_order: list[str] = []
+    day_epic_order: dict[str, list[str]] = {}
+    epic_task_data: dict[tuple, list[tuple[str, int]]] = {}
+
+    for date_str, epic_name, task_id, total_minutes in data:
+        display_name = epic_name if epic_name is not None else "(Misc)"
+        if date_str not in day_epic_order:
+            day_order.append(date_str)
+            day_epic_order[date_str] = []
+        key = (date_str, display_name)
+        if display_name not in day_epic_order[date_str]:
+            day_epic_order[date_str].append(display_name)
+            epic_task_data[key] = []
+        epic_task_data[key].append((task_id, total_minutes))
+
+    _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    week_total = 0
+
+    # A borderless two-column table lets Rich expand the name column to fill
+    # the panel width and right-align the time column, so all clock values
+    # line up in one consistent right-hand column regardless of name length.
+    t = Table(
+        box=None,
+        show_header=False,
+        show_edge=False,
+        padding=(0, 1),
+        expand=True,
+    )
+    t.add_column("Name", ratio=1)          # expands to fill available width
+    t.add_column("Time", justify="right", no_wrap=True)
+
+    if not day_order:
+        t.add_row(
+            Text("No tracked time this week.", style=_C_DIM),
+            Text(""),
+        )
+    else:
+        for day_index, date_str in enumerate(day_order):
+            day_total = sum(
+                mins
+                for epic_key in day_epic_order[date_str]
+                for _, mins in epic_task_data[(date_str, epic_key)]
+            )
+            week_total += day_total
+
+            d = date.fromisoformat(date_str)
+            day_label = _DAY_NAMES[d.weekday()]
+            display_date = d.strftime("%b %d")
+
+            # Blank separator row between days (not before the first).
+            if day_index > 0:
+                t.add_row(Text(""), Text(""))
+
+            # Day header — bold white.
+            t.add_row(
+                Text(f"  {day_label} {display_date}", style="bold white"),
+                Text(_minutes_to_clock(day_total), style="bold white"),
+            )
+
+            for epic_display in day_epic_order[date_str]:
+                key = (date_str, epic_display)
+                epic_total = sum(mins for _, mins in epic_task_data[key])
+                is_misc = epic_display == "(Misc)"
+
+                # Epic row — indented; (Misc) is dim, named Epics are cyan.
+                t.add_row(
+                    Text(f"    {epic_display}", style="dim" if is_misc else "bold cyan"),
+                    Text(_minutes_to_clock(epic_total), style="dim" if is_misc else "bold cyan"),
+                )
+
+                # Task rows — double-indented, magenta.
+                for task_id, task_mins in sorted(epic_task_data[key]):
+                    t.add_row(
+                        Text(f"      {task_id}", style="magenta"),
+                        Text(_minutes_to_clock(task_mins), style="magenta"),
+                    )
+
+    # Separator + week total at the bottom.
+    t.add_row(Text(""), Text(""))
+    t.add_row(
+        Text("  Week total:", style="bold"),
+        Text(_minutes_to_clock(week_total), style="bold cyan"),
+    )
+
+    return Panel(t, title=title, border_style=_C_PROMARK, padding=(0, 2))

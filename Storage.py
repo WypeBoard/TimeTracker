@@ -81,6 +81,97 @@ def create_schema() -> None:
             END
         ''')
 
+        # ── epics table ───────────────────────────────────────────────────
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS epics (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT    NOT NULL UNIQUE,
+                created_at TEXT    NOT NULL
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS epics_h (
+                h_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                h_operation TEXT    NOT NULL,
+                h_timestamp TEXT    NOT NULL,
+                id          INTEGER NOT NULL,
+                name        TEXT    NOT NULL,
+                created_at  TEXT    NOT NULL
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS epics_after_insert
+            AFTER INSERT ON epics
+            BEGIN
+                INSERT INTO epics_h (h_operation, h_timestamp, id, name, created_at)
+                VALUES ('I', datetime('now'), NEW.id, NEW.name, NEW.created_at);
+            END
+        ''')
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS epics_after_update
+            AFTER UPDATE ON epics
+            BEGIN
+                INSERT INTO epics_h (h_operation, h_timestamp, id, name, created_at)
+                VALUES ('U', datetime('now'), NEW.id, NEW.name, NEW.created_at);
+            END
+        ''')
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS epics_after_delete
+            AFTER DELETE ON epics
+            BEGIN
+                INSERT INTO epics_h (h_operation, h_timestamp, id, name, created_at)
+                VALUES ('D', datetime('now'), OLD.id, OLD.name, OLD.created_at);
+            END
+        ''')
+
+        # ── task_catalog table ────────────────────────────────────────────
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS task_catalog (
+                task_id    TEXT    PRIMARY KEY,
+                epic_id    INTEGER NOT NULL,
+                created_at TEXT    NOT NULL,
+                FOREIGN KEY (epic_id) REFERENCES epics(id)
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS task_catalog_h (
+                h_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                h_operation TEXT    NOT NULL,
+                h_timestamp TEXT    NOT NULL,
+                task_id     TEXT    NOT NULL,
+                epic_id     INTEGER NOT NULL,
+                created_at  TEXT    NOT NULL
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS task_catalog_after_insert
+            AFTER INSERT ON task_catalog
+            BEGIN
+                INSERT INTO task_catalog_h (h_operation, h_timestamp, task_id, epic_id, created_at)
+                VALUES ('I', datetime('now'), NEW.task_id, NEW.epic_id, NEW.created_at);
+            END
+        ''')
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS task_catalog_after_update
+            AFTER UPDATE ON task_catalog
+            BEGIN
+                INSERT INTO task_catalog_h (h_operation, h_timestamp, task_id, epic_id, created_at)
+                VALUES ('U', datetime('now'), NEW.task_id, NEW.epic_id, NEW.created_at);
+            END
+        ''')
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS task_catalog_after_delete
+            AFTER DELETE ON task_catalog
+            BEGIN
+                INSERT INTO task_catalog_h (h_operation, h_timestamp, task_id, epic_id, created_at)
+                VALUES ('D', datetime('now'), OLD.task_id, OLD.epic_id, OLD.created_at);
+            END
+        ''')
+
 
 def open_session(date_str: str, start: str, task: str) -> None:
     """Insert a new open session. `end` is NULL until the session is closed."""

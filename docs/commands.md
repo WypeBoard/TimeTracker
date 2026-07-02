@@ -55,6 +55,10 @@ start 0830 Epic-42
 - `epic` — task/epic ID. If omitted, task is left blank and can be filled
   later with `task`.
 
+If the task identifier has no entry in the Epic Catalog, the **Task–Epic
+modal** opens. Pressing `Esc` skips linking; the task is saved and treated as
+`(Misc)` in `epic summary`.
+
 Output examples:
 
 ```
@@ -135,11 +139,69 @@ task Epic-11 -s 2
   session for today.
 - `-s N` — targets session number N (1-indexed) for today.
 
+If the task identifier has no entry in the Epic Catalog (`task_catalog`), the
+**Task–Epic modal** opens so the user can link the task to an Epic before
+saving. Pressing `Esc` in the modal skips linking; the task is saved and
+treated as `(Misc)` in `epic summary`.
+
 Output:
 
 ```
 📌  #1  Epic-42  saved.
 ```
+
+---
+
+### `epic add <name>`
+
+Creates a new Epic with the given free-text name.
+
+```
+epic add Platform Team
+epic add "Mobile App"
+```
+
+- If an Epic with that name already exists, prints a warning and does nothing.
+
+Output:
+
+```
+✅  Epic 'Platform Team' created.
+⚠  An Epic with that name already exists.
+```
+
+---
+
+### `epic list`
+
+Lists all defined Epics, sorted alphabetically by name. Output goes to the
+Output panel.
+
+```
+epic list
+```
+
+Output example:
+
+```
+  1  Mobile App
+  2  Platform Team
+```
+
+---
+
+### `epic summary [wNN]`
+
+Opens the Epic Summary overlay showing time grouped by Epic for the target
+week. Defaults to the current week; `wNN` selects a specific ISO week number.
+
+```
+epic summary
+epic summary w26
+```
+
+See [Epic Summary overlay](#epic-summary-overlay) in `docs/tui.md` for the
+full layout and navigation reference.
 
 ---
 
@@ -211,3 +273,4 @@ promark w23
 
 - `docs/sqlite-datasource.md` — database schema and storage layer
 - `docs/tui.md` — TUI usage and keybinding reference
+- `docs/epic-catalog.md` — Epic Catalog: managing Epics and the task–Epic modal

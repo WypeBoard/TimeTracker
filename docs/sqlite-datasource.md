@@ -63,6 +63,57 @@ statement — they are never out of sync with the main table.
 
 ---
 
+### `epics` table
+
+Stores one row per defined Epic.
+
+| Column       | Type    | Notes                                |
+|--------------|---------|--------------------------------------|
+| `id`         | INTEGER | Primary key, auto-incremented        |
+| `name`       | TEXT    | Unique free-text Epic name           |
+| `created_at` | TEXT    | ISO-8601 UTC datetime of creation    |
+
+### `epics_h` table (history / shadow)
+
+Full audit trail for `epics`. Populated automatically by triggers.
+
+| Column        | Type    | Notes                                       |
+|---------------|---------|---------------------------------------------|
+| `h_id`        | INTEGER | Primary key, auto-incremented               |
+| `h_operation` | TEXT    | `'I'` Insert, `'U'` Update, `'D'` Delete   |
+| `h_timestamp` | TEXT    | ISO-8601 UTC datetime of the operation      |
+| `id`          | INTEGER | Mirrors `epics.id`                          |
+| `name`        | TEXT    | Mirrors `epics.name`                        |
+| `created_at`  | TEXT    | Mirrors `epics.created_at`                  |
+
+---
+
+### `task_catalog` table
+
+Stores the mapping from a task identifier (e.g. `TASK-123`) to an Epic.
+Each task identifier appears at most once.
+
+| Column       | Type    | Notes                                        |
+|--------------|---------|----------------------------------------------|
+| `task_id`    | TEXT    | Primary key — the task identifier string     |
+| `epic_id`    | INTEGER | Foreign key → `epics.id`                     |
+| `created_at` | TEXT    | ISO-8601 UTC datetime the link was created   |
+
+### `task_catalog_h` table (history / shadow)
+
+Full audit trail for `task_catalog`. Populated automatically by triggers.
+
+| Column        | Type    | Notes                                       |
+|---------------|---------|---------------------------------------------|
+| `h_id`        | INTEGER | Primary key, auto-incremented               |
+| `h_operation` | TEXT    | `'I'` Insert, `'U'` Update, `'D'` Delete   |
+| `h_timestamp` | TEXT    | ISO-8601 UTC datetime of the operation      |
+| `task_id`     | TEXT    | Mirrors `task_catalog.task_id`              |
+| `epic_id`     | INTEGER | Mirrors `task_catalog.epic_id`              |
+| `created_at`  | TEXT    | Mirrors `task_catalog.created_at`           |
+
+---
+
 ## Code Structure
 
 ```
@@ -71,17 +122,19 @@ db/
     query_type.py     — QueryType enum (READ / WRITE)
     connection.py     — Connection context manager
     repository.py     — execute / fetch_one / fetch_many helpers
-Storage.py            — session domain layer (the only file that knows the schema)
+Storage.py            — session domain layer (sessions / sessions_h DDL)
+EpicStorage.py        — Epic domain layer (epics / task_catalog DDL queries)
 Constants.py          — DB_FILE path constant
 ```
 
 ### Layer rules
 
-- `Commands.py` → calls `Storage.py` only.
-- `Storage.py` → calls `db/repository.py` only (except `create_schema`, which
-  uses `Connection` directly to batch all DDL in one transaction).
+- `Commands.py` → calls `Storage.py` and `EpicStorage.py` only.
+- `Storage.py` / `EpicStorage.py` → call `db/repository.py` only (except
+  `create_schema` in `Storage.py`, which uses `Connection` directly to batch
+  all DDL in one transaction).
 - `db/repository.py` → calls `db/connection.py` only.
-- Nothing outside `db/` imports from `db/` except `Storage.py`.
+- Nothing outside `db/` imports from `db/` except `Storage.py` and `EpicStorage.py`.
 
 ---
 
@@ -94,21 +147,25 @@ setup is required.
 
 ### Commands that write data
 
-| Command    | Storage call(s)                                      |
-|------------|------------------------------------------------------|
-| `start`    | `open_session(date, start, task)`                    |
-| `pause`    | `close_session(id, end)`                             |
-| `stop`     | `close_session(id, end)`                             |
-| `restart`  | `close_session(id, end)` + `open_session(...)`       |
-| `task`     | `update_session_task(id, epic)`                      |
+| Command          | Storage call(s)                                          |
+|------------------|----------------------------------------------------------|
+| `start`          | `open_session(date, start, task)`                        |
+| `pause`          | `close_session(id, end)`                                 |
+| `stop`           | `close_session(id, end)`                                 |
+| `restart`        | `close_session(id, end)` + `open_session(...)`           |
+| `task`           | `update_session_task(id, epic)`                          |
+| `epic add`       | `add_epic(name)`                                         |
+| Task–Epic modal  | `add_epic(name)` (optional) + `link_task_to_epic(task_id, epic_id)` |
 
 ### Commands that read data
 
-| Command    | Storage call(s)                                      |
-|------------|------------------------------------------------------|
-| `status`   | `get_today_sessions()`, `get_open_session()`         |
-| `log`      | `read_log()`                                         |
-| `promark`  | `read_log()`                                         |
+| Command          | Storage call(s)                                          |
+|------------------|----------------------------------------------------------|
+| `status`         | `get_today_sessions()`, `get_open_session()`             |
+| `log`            | `read_log()`                                             |
+| `promark`        | `read_log()`                                             |
+| `epic list`      | `list_epics()`                                           |
+| `epic summary`   | `get_epic_summary_data(week_num, year)`                  |
 
 ---
 
@@ -141,3 +198,4 @@ setup is required.
 ## Related Features
 
 - `commands.md` — documents all CLI commands that read/write session data.
+- `docs/epic-catalog.md` — Epic Catalog feature: Epics and task–Epic linking.
