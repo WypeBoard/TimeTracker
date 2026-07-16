@@ -6,12 +6,14 @@ Accepted commands:
   stop  [hhmm]
   resume [hhmm]
   restart [hhmm]          (deprecated alias for resume)
+  lunch [hhmm]
   task <epic> [-s N]
   log [wNN]
   promark [wNN]
   epic add <name>
   epic list
   epic summary [wNN]
+  config                  (opens the configuration screen)
   status                  (refreshes TodayPanel instead of printing)
 
 Supports:
@@ -148,6 +150,17 @@ class CommandInput(Input):
 
         if command in ("quit", "exit", "q"):
             self.app.exit()
+            return
+
+        if command == "lunch":
+            time_override = _parse_hhmm(args[0]) if args else None
+            from Commands import cmd_lunch
+            cmd_lunch(self._ctx, time_override)
+            return
+
+        if command == "config":
+            from Commands import cmd_config
+            cmd_config(self._ctx)
             return
 
         if command == "epic":

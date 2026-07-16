@@ -1,6 +1,6 @@
 # Feature: Configuration View
 
-Status: Approved
+Status: Documented
 
 ## Purpose
 
@@ -41,8 +41,8 @@ Configuration is accessed through a dedicated TUI screen and stored persistently
 ### `lunch` command
 
 - A new `cmd_lunch(ctx, time_override=None)` function is added to `Commands.py`.
-- It starts a session with `task = "Lunch"`, following the same flow as `cmd_start`.
-- If a session is already active: emits an error and returns, exactly like `cmd_start` does.
+- It starts a session with `task = "Lunch"`, following the same auto-close flow as `cmd_resume`.
+- If a session is already active: the running session is **automatically closed** at `time_str` first, then the Lunch session is opened (no separate `pause` is required).
 - On success: writes the session to the database, emits `ctx.info("▶  Started Lunch at {time}")`, and calls `ctx.on_session_changed()`.
 - **Does NOT** call `_notify_if_new_task` — Lunch is intentionally never linked to an Epic.
 - `Lunch` sessions are stored like any other session and are not placed in `task_catalog`.
@@ -411,6 +411,11 @@ TimeTracker currently shows a hard-coded 7.5-hour target. Both the target and th
 
 ## Manual Changes
 
+2026-07-16 — Bug fixes post-testing
+- `cmd_lunch`: changed from "error if session active" to "auto-close the running session first", matching user expectation that `lunch 1120` = pause at 11:20 + start Lunch at 11:20. This mirrors `cmd_resume` behaviour.
+- `cmd_resume`: changed task-carry logic to skip all non-work session types when looking for the task to carry forward: `"Lunch"` (always), any task in `excluded_tasks` (e.g. commute, coffee walk), and any task in `always_separate_tasks` (e.g. Sick, Doctor, Bank meeting). Resuming after any non-work marker now restores the last real work task.
+- Feature document and `docs/commands.md` updated to reflect the corrected behaviour.
+
 2026-07-07 — Refinement pass
 - Removed stale "Not yet fully defined — initial brainstorm only" caveat from Requirements.
 - Status advanced from Refinement → Proposed.
@@ -467,14 +472,5 @@ TimeTracker currently shows a hard-coded 7.5-hour target. Both the target and th
 
 ## Next Step
 
-> **Current status:** Proposed
-> **To reach Approved:** User reviews the Requirements section and explicitly approves the design.
-
-> **Current status:** Approved *(once reached)*
-> **To reach Implemented:** User opens a new session and explicitly requests implementation with a reference to this feature document.
-
-> **Current status:** Implemented *(once reached)*
-> **To reach Documented:** All files listed in the Documentation Plan are created or updated.
-
-> **Current status:** Documented *(once reached)*
+> **Current status:** Documented
 > **To reach Completed:** User confirms the documentation is accurate and the feature is working as described.

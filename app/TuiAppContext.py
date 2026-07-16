@@ -49,9 +49,9 @@ class TuiAppContext:
         from app.LogScreen import LogScreen
         self._app.push_screen(LogScreen(week_num, year))
 
-    def show_promark(self, week_days: dict, week_num: int, year: int) -> None:
+    def show_promark(self, promark_entries: list, week_num: int, year: int) -> None:
         from Printer import build_promark_panel
-        panel = build_promark_panel(week_days, week_num, year)
+        panel = build_promark_panel(promark_entries, week_num, year)
         self._get_output().write(panel)
 
     def on_new_task(self, task_id: str) -> None:
@@ -63,6 +63,11 @@ class TuiAppContext:
         """Push the EpicSummaryScreen overlay."""
         from app.EpicSummaryScreen import EpicSummaryScreen
         self._app.push_screen(EpicSummaryScreen(week_num, year))
+
+    def show_config(self) -> None:
+        """Push the ConfigScreen overlay."""
+        from app.ConfigScreen import ConfigScreen
+        self._app.push_screen(ConfigScreen())
 
     # ------------------------------------------------------------------ #
 

@@ -11,6 +11,11 @@ hours for each day:
 Today's row shows "now ▶" for the end time when a session is active, and the
 hours cell includes a ▶ marker. Days with no sessions show "—" in the range.
 
+Hours totals and the promark range for past days are computed from filtered
+sessions (applying the lunch_excluded and excluded_tasks settings). Excluded
+sessions are still stored and visible elsewhere; they are omitted only from
+the hours calculation shown here.
+
 The panel refreshes on demand when TuiAppContext.on_session_changed() is called
 and every 60 seconds via a timer (so the running total stays current).
 """
@@ -44,6 +49,7 @@ class WeekPanel(Static):
         """Re-query the current week's sessions and redraw the panel."""
         from Storage import read_log
         from Commands import _build_day_status
+        from SettingsStorage import SettingsRepository
 
         today = date.today()
         today_iso = today.isocalendar()
@@ -53,9 +59,18 @@ class WeekPanel(Static):
         # read_log() returns only *closed* sessions; today's live status
         # supplements it with any active session.
         days = read_log()
-        day_status = _build_day_status()
+        day_status = _build_day_status()  # already applies settings
 
-        table = _build_week_table(days, day_status, week_num, year, today)
+        # Read settings for filtering past days.
+        settings = SettingsRepository()
+        lunch_excluded = settings.get_lunch_excluded()
+        excluded_tasks = settings.get_excluded_tasks()
+        lunch_offset = settings.get_lunch_promark_offset_minutes()
+
+        table = _build_week_table(
+            days, day_status, week_num, year, today,
+            lunch_excluded, excluded_tasks, lunch_offset,
+        )
         self.update(table)
         self.border_title = f"Week {week_num}"
 
@@ -66,10 +81,16 @@ def _build_week_table(
         week_num: int,
         year: int,
         today: date,
+        lunch_excluded: bool = True,
+        excluded_tasks: list | None = None,
+        lunch_offset: int = 0,
 ) -> Table:
     """Build a Rich Table with the promark-style week layout."""
-    from Promark import promark_entry
+    from Promark import promark_entry, session_hours
     from app.utils import format_hhmm
+
+    if excluded_tasks is None:
+        excluded_tasks = []
 
     # Resolve the Monday of the target ISO week.
     jan4 = date(year, 1, 4)
@@ -120,9 +141,24 @@ def _build_week_table(
             day_text  = Text(day_label, style="bold")
 
         elif date_str in days:
-            sessions = days[date_str]["sessions"]
-            total    = days[date_str]["total"]
-            pm_start, pm_end = promark_entry(sessions, total)
+            raw_sessions = days[date_str]["sessions"]  # (start, end, task)
+
+            # Filter sessions for hours calculation (same rules as _build_day_status).
+            filtered = [
+                (s, e, t) for s, e, t in raw_sessions
+                if not (lunch_excluded and t == "Lunch")
+                and t not in excluded_tasks
+            ]
+            total = sum(session_hours(s, e) for s, e, _ in filtered)
+
+            # Actual lunch minutes for the Promark offset (from all sessions).
+            actual_lunch = sum(
+                round(session_hours(s, e) * 60)
+                for s, e, t in raw_sessions
+                if t == "Lunch"
+            )
+
+            pm_start, pm_end = promark_entry(filtered, total, lunch_offset, actual_lunch)
             range_text = Text(f"{pm_start} → {pm_end}", style="")
             hours_text = Text(format_hhmm(total), style="bold")
             date_text  = Text(date_str, style="dim")
