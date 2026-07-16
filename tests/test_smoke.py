@@ -215,6 +215,71 @@ def test_resume_no_sessions_today(db):
 
 
 # ---------------------------------------------------------------------------
+# resume skips non-work tasks (Lunch, excluded, always-separate)
+# ---------------------------------------------------------------------------
+
+def test_resume_skips_lunch_carries_work_task(db):
+    """resume after a Lunch session carries the pre-lunch work task, not 'Lunch'."""
+    ctx = RecordingContext()
+
+    cmd_start(ctx, "08:00", "TASK-1")   # session 1: work
+    cmd_lunch(ctx, "12:00")             # session 1 closed, session 2: Lunch (open)
+    cmd_resume(ctx, "12:30")            # session 2 closed, session 3 opened
+
+    open_sess = get_open_session()
+    assert open_sess is not None
+    _id, _date, start, task = open_sess
+    assert start == "12:30"
+    assert task == "TASK-1", (
+        f"resume should carry 'TASK-1', not the Lunch task; got {task!r}"
+    )
+
+
+def test_resume_skips_excluded_task(db):
+    """resume skips sessions whose task is in excluded_tasks."""
+    from SettingsStorage import SettingsRepository
+
+    ctx = RecordingContext()
+    # Mark "commute" as excluded.
+    SettingsRepository().set_excluded_tasks(["commute"])
+
+    cmd_start(ctx, "07:00", "TASK-99")  # session 1: work
+    cmd_pause(ctx, "08:00")
+    cmd_start(ctx, "08:00", "commute")  # session 2: excluded task (open)
+    cmd_resume(ctx, "09:00")            # should close commute, resume TASK-99
+
+    open_sess = get_open_session()
+    assert open_sess is not None
+    _id, _date, start, task = open_sess
+    assert start == "09:00"
+    assert task == "TASK-99", (
+        f"resume should skip 'commute' (excluded) and carry 'TASK-99'; got {task!r}"
+    )
+
+
+def test_resume_skips_always_separate_task(db):
+    """resume skips sessions whose task is in always_separate_tasks."""
+    from SettingsStorage import SettingsRepository
+
+    ctx = RecordingContext()
+    # Mark "Doctor" as always-separate.
+    SettingsRepository().set_always_separate_tasks(["Doctor"])
+
+    cmd_start(ctx, "07:00", "TASK-42")  # session 1: work
+    cmd_pause(ctx, "09:00")
+    cmd_start(ctx, "09:00", "Doctor")   # session 2: always-separate (open)
+    cmd_resume(ctx, "10:00")            # should close Doctor, resume TASK-42
+
+    open_sess = get_open_session()
+    assert open_sess is not None
+    _id, _date, start, task = open_sess
+    assert start == "10:00"
+    assert task == "TASK-42", (
+        f"resume should skip 'Doctor' (always-separate) and carry 'TASK-42'; got {task!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # task -s N
 # ---------------------------------------------------------------------------
 
@@ -567,16 +632,30 @@ def test_lunch_does_not_trigger_epic_modal(db):
     )
 
 
-def test_lunch_rejected_when_session_already_running(db):
-    """lunch emits a warning and does nothing if a session is already running."""
+def test_lunch_auto_closes_running_session(db):
+    """lunch closes the running session first, then starts a Lunch session.
+
+    'lunch 1200' is equivalent to 'pause 1200' + open Lunch at 12:00.
+    No warning should be emitted; two sessions should exist afterwards.
+    """
     ctx = RecordingContext()
     cmd_start(ctx, "08:00")
     cmd_lunch(ctx, "12:00")
 
-    assert ctx.warnings, "Should warn about running session"
+    assert not ctx.warnings, "lunch should not warn when auto-closing a session"
+
     sessions = get_today_sessions()
-    assert len(sessions) == 1, "Only the initial session should exist"
+    assert len(sessions) == 2, "Should have the original session + the Lunch session"
+
+    # First session: the original work session, closed at 12:00.
+    assert sessions[0][1] == "08:00"   # start
+    assert sessions[0][2] == "12:00"   # end (closed)
     assert sessions[0][3] != "Lunch"
+
+    # Second session: the Lunch session, still open.
+    assert sessions[1][1] == "12:00"   # start
+    assert sessions[1][2] is None      # open
+    assert sessions[1][3] == "Lunch"
 
 
 def test_lunch_manual_time_override(db):
