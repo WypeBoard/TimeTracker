@@ -70,8 +70,15 @@ class AppContext(Protocol):
         """
         ...
 
-    def show_promark(self, week_days: dict, week_num: int, year: int) -> None:
+    def show_promark(self, promark_entries: list, week_num: int, year: int) -> None:
         """Display the Promark table for a week.
+
+        promark_entries is a pre-processed list of day dicts produced by
+        cmd_promark() in Commands.py. Each dict contains:
+          - "date_str": "YYYY-MM-DD"
+          - "day_name": "Mon" … "Fri"
+          - "consolidated": {"start": str, "end": str, "hours": float} | None
+          - "separate": [{"task": str, "hours": float}, ...]
 
         TUI: writes the Promark panel to the Output panel.
         Tests: records the call arguments for assertion.
@@ -94,5 +101,13 @@ class AppContext(Protocol):
 
         TUI: pushes the EpicSummaryScreen overlay.
         Tests: records the call arguments for assertion.
+        """
+        ...
+
+    def show_config(self) -> None:
+        """Open the configuration screen.
+
+        TUI: pushes the ConfigScreen overlay.
+        Tests: records the call for assertion.
         """
         ...

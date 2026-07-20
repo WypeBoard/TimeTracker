@@ -121,10 +121,13 @@ Today   6:00 / 7:24   ████████████████░░░�
 Week   32:30 / 29:36  ██████████████████████    110%
 ```
 
-- **Today** row: logged hours vs. `TARGET_HOURS` (7.4 h).
+- **Today** row: logged hours vs. the configured daily target (default 7.4 h).
+  Hours are computed after applying the `lunch_excluded` and `excluded_tasks`
+  settings — excluded sessions do not count toward this total.
 - **Week** row: this week's total hours vs. the *dynamic week target*
-  (`TARGET_HOURS × number of weekdays with at least one session`). This gives
-  a meaningful signal on Monday instead of always showing ~20%.
+  (`target_hours_per_day × number of weekdays with at least one non-excluded
+  session`). This gives a meaningful signal on Monday instead of always
+  showing ~20%.
 - Edge case — no sessions yet this week: the Week row renders `0:00 / —`
   (dim, no bar) so the layout does not shift when the first session starts.
 - Bars are green when the target is met; yellow otherwise.
@@ -147,16 +150,41 @@ reference including syntax, arguments, and output examples.
 | Command | Behaviour in TUI |
 |---------|-----------------|
 | `start [hhmm] [epic]` | Opens session; confirmation in Output; shows Task–Epic modal if task is new |
+| `lunch [hhmm]` | Opens Lunch session; confirmation in Output; no Task–Epic modal |
 | `pause [hhmm]` | Closes session; confirmation in Output |
 | `stop [hhmm]` | Closes session; all panels refresh |
 | `resume [hhmm]` | Close + reopen, carrying epic; shows Task–Epic modal if carried task is new |
 | `task <epic> [-s N]` | Tags session; confirmation in Output; shows Task–Epic modal if task is new |
 | `status` | Refreshes Today panel immediately (no Output message) |
 | `log [wNN]` | Opens the Log overlay |
-| `promark [wNN]` | Writes the Promark table to Output |
+| `promark [wNN]` | Writes the Promark table to Output (applies configured settings) |
 | `epic add <name>` | Creates a new Epic; confirmation in Output |
 | `epic list` | Lists all Epics alphabetically in Output |
 | `epic summary [wNN]` | Opens the Epic Summary overlay |
+| `config` | Opens the Configuration screen |
+
+---
+
+## Configuration Screen
+
+Opened by typing `config` in the command bar or pressing `Ctrl+,`.
+
+The configuration screen is a scrollable modal overlay with four sections:
+
+1. **Daily work target** — radio group: 37-hour week (7h 24m), 40-hour week
+   (8h), or Custom (any positive decimal ≤ 24h).
+2. **Lunch** — toggle: Excluded (default) or Included from working hours;
+   plus a Promark offset (minutes) for the synthetic end-time calculation.
+3. **Excluded from working hours** — task list; entries are filtered out of
+   hours totals and the progress bar (but still visible in all panels).
+4. **Always separate (Promark only)** — task list; entries appear as standalone
+   rows in Promark output (hours only) rather than being folded into the
+   consolidated day entry.
+
+**[Save]** validates all fields and writes to the database.
+**[Close]** / `Esc` discards all in-memory changes without saving.
+
+See `docs/configuration.md` for the full reference.
 
 ---
 
@@ -275,15 +303,18 @@ Epic within each day. Navigation matches the Log overlay.
 |-----|--------|
 | `Enter` | Submit command |
 | `↑` / `↓` | Browse command history (within the session) |
-| `Esc` | Clear command input (or close overlay) |
+| `Esc` | Clear command input (or close overlay / cancel add-input) |
 | `Tab` / `Shift+Tab` | Cycle focus between panels |
 | `l` | Open the Log overlay for the current week |
+| `ctrl+,` | Open the Configuration screen |
 | `ctrl+q` | Quit the TUI |
 | `←` / `→` (in Log / Epic Summary overlay) | Navigate between weeks |
 | `↑` / `↓` (in Task–Epic modal) | Navigate the Epic list |
 | `Enter` (in Task–Epic modal) | Select Epic or confirm new name |
 | `Esc` (in Task–Epic modal State 1) | Skip linking (save as Misc) |
 | `Esc` (in Task–Epic modal State 2) | Return to Epic selection list |
+| `Esc` (in Config screen, add-input visible) | Cancel the add-input |
+| `Esc` (in Config screen, no add-input) | Close the config screen without saving |
 
 ---
 
@@ -321,3 +352,4 @@ The Output panel does not use a timer — it updates only in response to command
   enhancements (WeekPanel redesign, TaskSummaryPanel, ProgressStrip).
 - `docs/commands.md` — full command reference.
 - `docs/epic-catalog.md` — Epic Catalog: managing Epics, task–Epic linking, and the modal.
+- `docs/configuration.md` — configuration screen: settings and their effects.

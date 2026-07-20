@@ -128,3 +128,8 @@ class TimeTrackerApp(App):
         from app.LogScreen import LogScreen
         today_iso = date.today().isocalendar()
         self.push_screen(LogScreen(today_iso.week, today_iso.year))
+
+    def action_show_config(self) -> None:
+        """Open the configuration screen."""
+        from app.ConfigScreen import ConfigScreen
+        self.push_screen(ConfigScreen())

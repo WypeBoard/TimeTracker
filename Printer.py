@@ -348,9 +348,9 @@ def print_log_week(week_days: dict, week_num: int, year: int) -> None:
     console.print()
 
 
-def print_promark_week(week_days: dict, week_num: int, year: int) -> None:
+def print_promark_week(promark_entries: list, week_num: int, year: int) -> None:
     """Print Mon–Fri Promark entries for the given ISO week as a rich table."""
-    console.print(build_promark_panel(week_days, week_num, year))
+    console.print(build_promark_panel(promark_entries, week_num, year))
     console.print()
 
 

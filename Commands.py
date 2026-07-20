@@ -11,19 +11,17 @@ avoids importing app_context at startup time in all code paths.
 """
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import TYPE_CHECKING
 
-from Constants import TARGET_HOURS
 from Storage import (
     open_session, close_session, update_session_task,
     get_open_session, get_today_sessions, read_log,
 )
 from EpicStorage import (
     add_epic, list_epics, get_task_epic,
-    get_epic_summary_data,
 )
-from Promark import promark_entry
+from Promark import promark_entry, compute_day_promark
 from Printer import DayStatus, print_status
 from logger import get_logger
 
@@ -60,6 +58,43 @@ def cmd_start(ctx: AppContext, time_override: str | None = None, epic: str | Non
     _notify_if_new_task(ctx, epic)
 
 
+def cmd_lunch(ctx: AppContext, time_override: str | None = None) -> None:
+    """Open a new Lunch session.
+
+    Creates a session with task = 'Lunch'. If a session is currently open,
+    it is closed at time_str first — the same auto-close behaviour as
+    'resume'. This mirrors the natural workflow: 'lunch 1200' closes
+    whatever is running at 12:00 and immediately starts the lunch break.
+
+    Intentionally does NOT call _notify_if_new_task — Lunch is never
+    linked to an Epic.
+    """
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = time_override or now.strftime("%H:%M")
+    note = " (manually set)" if time_override else ""
+
+    open_sess = get_open_session()
+    if open_sess:
+        # Auto-close the running session before starting Lunch, just like
+        # 'resume' does. The user should not need a separate 'pause' call.
+        open_id, _date, open_start, _ = open_sess
+        today_sessions = get_today_sessions()
+        today_ids = [s[0] for s in today_sessions]
+        session_num = today_ids.index(open_id) + 1 if open_id in today_ids else "?"
+        close_session(open_id, time_str)
+        ctx.info(f"⏸  Closed #{session_num} — {open_start} → {time_str}{note}")
+
+    open_session(date_str, time_str, "Lunch")
+    ctx.info(f"▶  Started Lunch at {time_str}{note}")
+    ctx.on_session_changed()
+
+
+def cmd_config(ctx: AppContext) -> None:
+    """Open the configuration screen."""
+    ctx.show_config()
+
+
 def cmd_pause(ctx: AppContext, time_override: str | None = None) -> None:
     """Close the current session without printing a day summary."""
     _log.info("cmd_pause: time_override=%r", time_override)
@@ -91,8 +126,16 @@ def cmd_resume(ctx: AppContext, time_override: str | None = None) -> None:
 
     'resume' is the natural inverse of 'pause': clock out -> break -> clock back
     in. The epic is visible in the confirmation line so the user can verify.
+
+    The task-carry lookup skips any session whose task is a non-work marker:
+    Lunch, anything in excluded_tasks, and anything in always_separate_tasks.
+    This means that after lunch, a sick morning, or a bank-meeting session,
+    resume restores the last real work task rather than carrying the break
+    task forward.
     """
     _log.info("cmd_resume: time_override=%r", time_override)
+    from SettingsStorage import SettingsRepository
+
     today_sessions = get_today_sessions()  # [(id, start, end, task)]
 
     if not today_sessions:
@@ -100,8 +143,25 @@ def cmd_resume(ctx: AppContext, time_override: str | None = None) -> None:
         ctx.error("⚠  No sessions today. Run 'start' first.")
         return
 
-    # Carry the epic from the last session (open or closed).
-    last_id, last_start, last_end, last_task = today_sessions[-1]
+    # Build the set of task names that should be skipped during the carry-
+    # forward lookup. These are all "non-work" markers:
+    #   - "Lunch" is always skipped (handled by its own dedicated command).
+    #   - excluded_tasks: tasks that don't count toward the daily target
+    #     (e.g. "commute", "coffee walk").
+    #   - always_separate_tasks: tasks that appear as standalone Promark rows
+    #     (e.g. "Sick", "Doctor", "Bank meeting").
+    settings = SettingsRepository()
+    skip_tasks = (
+        {"Lunch"}
+        | set(settings.get_excluded_tasks())
+        | set(settings.get_always_separate_tasks())
+    )
+
+    # Find the last session whose task is not in skip_tasks. Fall back to
+    # today_sessions[-1] if every session today is a non-work marker.
+    work_sessions = [s for s in today_sessions if s[3] not in skip_tasks]
+    source = work_sessions[-1] if work_sessions else today_sessions[-1]
+    last_id, last_start, last_end, last_task = source
 
     time_str = time_override or datetime.now().strftime("%H:%M")
 
@@ -211,20 +271,55 @@ def cmd_log(ctx: AppContext, week_str: str | None = None) -> None:
 
 
 def cmd_promark(ctx: AppContext, week_str: str | None = None) -> None:
-    """Print a full week's Promark entries."""
+    """Print a full week's Promark entries, applying configured settings.
+
+    Reads always_separate_tasks, lunch_excluded, and lunch_promark_offset_minutes
+    from SettingsRepository and passes them as plain arguments to Promark.py.
+    Builds a list of processed day entries (one per weekday, Mon–Fri) and
+    passes the result to ctx.show_promark().
+    """
+    from SettingsStorage import SettingsRepository
+
     days = read_log()
 
     today_iso = date.today().isocalendar()
     target_week = today_iso.week if week_str is None else int(week_str[1:])
     target_year = today_iso.year
 
-    week_days = {
-        d: info for d, info in days.items()
-        if date.fromisoformat(d).isocalendar().week == target_week
-        and date.fromisoformat(d).isocalendar().year == target_year
-    }
+    # Read settings once for the whole week.
+    settings = SettingsRepository()
+    always_separate = settings.get_always_separate_tasks()
+    lunch_excluded = settings.get_lunch_excluded()
+    lunch_offset = settings.get_lunch_promark_offset_minutes()
 
-    ctx.show_promark(week_days, target_week, target_year)
+    # Resolve Monday of the target ISO week.
+    jan4 = date(target_year, 1, 4)
+    week1_monday = jan4 - timedelta(days=jan4.weekday())
+    monday = week1_monday + timedelta(weeks=target_week - 1)
+
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    promark_entries = []
+
+    for i in range(5):
+        d = monday + timedelta(days=i)
+        date_str = d.strftime("%Y-%m-%d")
+
+        if date_str in days:
+            all_sessions = days[date_str]["sessions"]  # (start, end, task)
+            consolidated, separate = compute_day_promark(
+                all_sessions, always_separate, lunch_excluded, lunch_offset
+            )
+        else:
+            consolidated, separate = None, []
+
+        promark_entries.append({
+            "date_str": date_str,
+            "day_name": day_names[i],
+            "consolidated": consolidated,
+            "separate": separate,
+        })
+
+    ctx.show_promark(promark_entries, target_week, target_year)
 
 
 def cmd_epic_add(ctx: AppContext, name: str) -> None:
@@ -262,18 +357,44 @@ def cmd_epic_summary(ctx: AppContext, week_str: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 def _build_day_status(now: datetime | None = None) -> DayStatus:
-    """Gather today's log data into a DayStatus for the printers."""
+    """Gather today's log data into a DayStatus for the printers.
+
+    Reads settings (daily target, lunch exclusion, excluded tasks, lunch
+    Promark offset) at call time. No settings state is cached.
+    """
+    from SettingsStorage import SettingsRepository
+
     now = now or datetime.now()
     today_str = date.today().strftime("%Y-%m-%d")
 
+    settings = SettingsRepository()
+    target_hours = settings.get_daily_work_target()
+    lunch_excluded = settings.get_lunch_excluded()
+    excluded_tasks = settings.get_excluded_tasks()
+    lunch_offset = settings.get_lunch_promark_offset_minutes()
+
     today_sessions = get_today_sessions()
 
+    # ALL completed sessions — used for display (sessions table in TUI/CLI).
+    # Per spec: "Time logged against excluded tasks is still visible in all panels."
     completed = [
         (start, end, task)
         for _id, start, end, task in today_sessions
         if end is not None
     ]
-    total_hours = sum(_session_hours(s, e) for s, e, _ in completed)
+
+    # Filtered sessions — used for hours totals and Promark range only.
+    filtered = _filter_for_hours(completed, lunch_excluded, excluded_tasks)
+    total_hours = sum(_session_hours(s, e) for s, e, _ in filtered)
+
+    # actual_lunch_minutes: sum of Lunch session durations from ALL completed
+    # sessions, regardless of lunch_excluded (per spec: the offset calculation
+    # is independent of the exclusion toggle).
+    actual_lunch_minutes = sum(
+        round(_session_hours(s, e) * 60)
+        for s, e, t in completed
+        if t == "Lunch"
+    )
 
     active_start = None
     active_hours = 0.0
@@ -289,19 +410,45 @@ def _build_day_status(now: datetime | None = None) -> DayStatus:
         except ValueError:
             active_hours = 0.0
 
-    pm_start, pm_end = promark_entry(completed, total_hours) if completed else (None, None)
+    # Promark range computed from filtered sessions + lunch offset.
+    pm_start, pm_end = promark_entry(
+        filtered, total_hours, lunch_offset, actual_lunch_minutes
+    ) if filtered else (None, None)
 
     return DayStatus(
         today_str=today_str,
-        sessions=completed,
-        total_hours=total_hours,
-        target_hours=TARGET_HOURS,
+        sessions=completed,       # all sessions for display
+        total_hours=total_hours,  # filtered total for hours calculations
+        target_hours=target_hours,
         active_start=active_start,
         active_hours=active_hours,
         active_task=active_task,
         promark_start=pm_start,
         promark_end=pm_end,
     )
+
+
+def _filter_for_hours(
+    sessions: list[tuple],
+    lunch_excluded: bool,
+    excluded_tasks: list[str],
+) -> list[tuple]:
+    """Return sessions filtered for hours calculation.
+
+    Removes Lunch sessions when lunch_excluded is True, and any sessions
+    whose task appears in excluded_tasks.
+
+    The returned list is used only for totals and Promark range calculations.
+    The full unfiltered list is still shown in all display panels.
+    """
+    result = []
+    for s, e, t in sessions:
+        if lunch_excluded and t == "Lunch":
+            continue
+        if t in excluded_tasks:
+            continue
+        result.append((s, e, t))
+    return result
 
 
 def _session_hours(start: str, end: str) -> float:

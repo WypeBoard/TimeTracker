@@ -175,6 +175,54 @@ def create_schema() -> None:
             END
         ''')
 
+        # ── settings table ────────────────────────────────────────────────
+        # Key-value store for user-configurable application settings.
+        # updated_at is the local datetime when the row was last written
+        # (human-readable "last edited" timestamp, distinct from h_timestamp).
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS settings_h (
+                h_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                h_operation TEXT    NOT NULL,
+                h_timestamp TEXT    NOT NULL,
+                key         TEXT    NOT NULL,
+                value       TEXT    NOT NULL,
+                updated_at  TEXT    NOT NULL
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS settings_after_insert
+            AFTER INSERT ON settings
+            BEGIN
+                INSERT INTO settings_h (h_operation, h_timestamp, key, value, updated_at)
+                VALUES ('I', datetime('now'), NEW.key, NEW.value, NEW.updated_at);
+            END
+        ''')
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS settings_after_update
+            AFTER UPDATE ON settings
+            BEGIN
+                INSERT INTO settings_h (h_operation, h_timestamp, key, value, updated_at)
+                VALUES ('U', datetime('now'), NEW.key, NEW.value, NEW.updated_at);
+            END
+        ''')
+        cur.execute('''
+            CREATE TRIGGER IF NOT EXISTS settings_after_delete
+            AFTER DELETE ON settings
+            BEGIN
+                INSERT INTO settings_h (h_operation, h_timestamp, key, value, updated_at)
+                VALUES ('D', datetime('now'), OLD.key, OLD.value, OLD.updated_at);
+            END
+        ''')
+
     _log.info("Database schema verified / created")
 
 

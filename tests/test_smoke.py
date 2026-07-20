@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from Storage import create_schema, get_today_sessions, get_open_session
 from Commands import (
     cmd_start, cmd_pause, cmd_stop, cmd_resume, cmd_restart,
-    cmd_task, cmd_log, _build_day_status, _session_hours,
+    cmd_task, cmd_log, cmd_lunch, cmd_config, _build_day_status, _session_hours,
     cmd_epic_add, cmd_epic_list, cmd_epic_summary,
 )
 import db.repository as repo
@@ -49,9 +49,10 @@ class RecordingContext:
         self.warnings: list[str] = []
         self.errors: list[str] = []
         self.log_calls: list[tuple] = []           # (week_days, week_num, year)
-        self.promark_calls: list[tuple] = []       # (week_days, week_num, year)
+        self.promark_calls: list[tuple] = []       # (promark_entries, week_num, year)
         self.new_task_calls: list[str] = []        # task_ids passed to on_new_task
         self.epic_summary_calls: list[tuple] = []  # (week_num, year)
+        self.config_calls: int = 0                 # count of show_config calls
         self.session_changed_count: int = 0
 
     def info(self, message: str) -> None:
@@ -72,14 +73,17 @@ class RecordingContext:
     def show_log(self, week_days: dict, week_num: int, year: int) -> None:
         self.log_calls.append((week_days, week_num, year))
 
-    def show_promark(self, week_days: dict, week_num: int, year: int) -> None:
-        self.promark_calls.append((week_days, week_num, year))
+    def show_promark(self, promark_entries: list, week_num: int, year: int) -> None:
+        self.promark_calls.append((promark_entries, week_num, year))
 
     def on_new_task(self, task_id: str) -> None:
         self.new_task_calls.append(task_id)
 
     def show_epic_summary(self, week_num: int, year: int) -> None:
         self.epic_summary_calls.append((week_num, year))
+
+    def show_config(self) -> None:
+        self.config_calls += 1
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +212,71 @@ def test_resume_no_sessions_today(db):
 
     assert ctx.errors, "Should have received an error message"
     assert get_today_sessions() == []
+
+
+# ---------------------------------------------------------------------------
+# resume skips non-work tasks (Lunch, excluded, always-separate)
+# ---------------------------------------------------------------------------
+
+def test_resume_skips_lunch_carries_work_task(db):
+    """resume after a Lunch session carries the pre-lunch work task, not 'Lunch'."""
+    ctx = RecordingContext()
+
+    cmd_start(ctx, "08:00", "TASK-1")   # session 1: work
+    cmd_lunch(ctx, "12:00")             # session 1 closed, session 2: Lunch (open)
+    cmd_resume(ctx, "12:30")            # session 2 closed, session 3 opened
+
+    open_sess = get_open_session()
+    assert open_sess is not None
+    _id, _date, start, task = open_sess
+    assert start == "12:30"
+    assert task == "TASK-1", (
+        f"resume should carry 'TASK-1', not the Lunch task; got {task!r}"
+    )
+
+
+def test_resume_skips_excluded_task(db):
+    """resume skips sessions whose task is in excluded_tasks."""
+    from SettingsStorage import SettingsRepository
+
+    ctx = RecordingContext()
+    # Mark "commute" as excluded.
+    SettingsRepository().set_excluded_tasks(["commute"])
+
+    cmd_start(ctx, "07:00", "TASK-99")  # session 1: work
+    cmd_pause(ctx, "08:00")
+    cmd_start(ctx, "08:00", "commute")  # session 2: excluded task (open)
+    cmd_resume(ctx, "09:00")            # should close commute, resume TASK-99
+
+    open_sess = get_open_session()
+    assert open_sess is not None
+    _id, _date, start, task = open_sess
+    assert start == "09:00"
+    assert task == "TASK-99", (
+        f"resume should skip 'commute' (excluded) and carry 'TASK-99'; got {task!r}"
+    )
+
+
+def test_resume_skips_always_separate_task(db):
+    """resume skips sessions whose task is in always_separate_tasks."""
+    from SettingsStorage import SettingsRepository
+
+    ctx = RecordingContext()
+    # Mark "Doctor" as always-separate.
+    SettingsRepository().set_always_separate_tasks(["Doctor"])
+
+    cmd_start(ctx, "07:00", "TASK-42")  # session 1: work
+    cmd_pause(ctx, "09:00")
+    cmd_start(ctx, "09:00", "Doctor")   # session 2: always-separate (open)
+    cmd_resume(ctx, "10:00")            # should close Doctor, resume TASK-42
+
+    open_sess = get_open_session()
+    assert open_sess is not None
+    _id, _date, start, task = open_sess
+    assert start == "10:00"
+    assert task == "TASK-42", (
+        f"resume should skip 'Doctor' (always-separate) and carry 'TASK-42'; got {task!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -530,3 +599,162 @@ def test_epic_summary_excludes_sessions_without_task(db):
 
     data = get_epic_summary_data(week_num, year)
     assert data == [], "Sessions with no task should not appear in epic summary data"
+
+
+# ---------------------------------------------------------------------------
+# cmd_lunch
+# ---------------------------------------------------------------------------
+
+def test_lunch_creates_lunch_session(db):
+    """lunch creates a session with task = 'Lunch'."""
+    ctx = RecordingContext()
+    cmd_lunch(ctx, "12:00")
+
+    assert not ctx.errors, f"Unexpected errors: {ctx.errors}"
+    assert any("Lunch" in m for m in ctx.infos), "Should confirm Lunch started"
+    assert ctx.session_changed_count == 1
+
+    sessions = get_today_sessions()
+    assert len(sessions) == 1
+    _id, start, end, task = sessions[0]
+    assert start == "12:00"
+    assert end is None  # session is still open
+    assert task == "Lunch"
+
+
+def test_lunch_does_not_trigger_epic_modal(db):
+    """lunch never calls on_new_task — Lunch is not linked to any Epic."""
+    ctx = RecordingContext()
+    cmd_lunch(ctx, "12:00")
+
+    assert ctx.new_task_calls == [], (
+        "lunch must not call on_new_task — Lunch is intentionally Epic-free"
+    )
+
+
+def test_lunch_auto_closes_running_session(db):
+    """lunch closes the running session first, then starts a Lunch session.
+
+    'lunch 1200' is equivalent to 'pause 1200' + open Lunch at 12:00.
+    No warning should be emitted; two sessions should exist afterwards.
+    """
+    ctx = RecordingContext()
+    cmd_start(ctx, "08:00")
+    cmd_lunch(ctx, "12:00")
+
+    assert not ctx.warnings, "lunch should not warn when auto-closing a session"
+
+    sessions = get_today_sessions()
+    assert len(sessions) == 2, "Should have the original session + the Lunch session"
+
+    # First session: the original work session, closed at 12:00.
+    assert sessions[0][1] == "08:00"   # start
+    assert sessions[0][2] == "12:00"   # end (closed)
+    assert sessions[0][3] != "Lunch"
+
+    # Second session: the Lunch session, still open.
+    assert sessions[1][1] == "12:00"   # start
+    assert sessions[1][2] is None      # open
+    assert sessions[1][3] == "Lunch"
+
+
+def test_lunch_manual_time_override(db):
+    """lunch stores the time override as provided."""
+    ctx = RecordingContext()
+    cmd_lunch(ctx, "11:45")
+
+    sessions = get_today_sessions()
+    assert len(sessions) == 1
+    assert sessions[0][1] == "11:45"
+    assert "(manually set)" in ctx.infos[-1]
+
+
+# ---------------------------------------------------------------------------
+# cmd_config
+# ---------------------------------------------------------------------------
+
+def test_config_calls_show_config(db):
+    """cmd_config delegates to ctx.show_config()."""
+    ctx = RecordingContext()
+    cmd_config(ctx)
+
+    assert ctx.config_calls == 1, "show_config should be called once"
+    assert not ctx.errors
+
+
+# ---------------------------------------------------------------------------
+# Settings — _build_day_status applies lunch exclusion
+# ---------------------------------------------------------------------------
+
+def test_build_day_status_excludes_lunch_from_hours(db):
+    """_build_day_status excludes Lunch from total_hours when lunch_excluded=True."""
+    from SettingsStorage import SettingsRepository
+
+    today = date.today().strftime("%Y-%m-%d")
+    # Work session: 08:00–12:00 = 4h
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '08:00', '12:00', 'WORK')",
+        (today,),
+    )
+    # Lunch session: 12:00–12:30 = 0.5h
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '12:00', '12:30', 'Lunch')",
+        (today,),
+    )
+
+    # Default: lunch_excluded = True
+    status = _build_day_status()
+    assert abs(status.total_hours - 4.0) < 0.01, (
+        f"Expected 4.0h (Lunch excluded), got {status.total_hours:.2f}h"
+    )
+    # Sessions table still shows all sessions (Lunch is still visible).
+    assert len(status.sessions) == 2, "Both sessions should appear in display"
+
+    # Now include Lunch.
+    settings = SettingsRepository()
+    settings.set_lunch_excluded(False)
+
+    status2 = _build_day_status()
+    assert abs(status2.total_hours - 4.5) < 0.01, (
+        f"Expected 4.5h (Lunch included), got {status2.total_hours:.2f}h"
+    )
+
+
+def test_build_day_status_excludes_configured_tasks(db):
+    """_build_day_status excludes tasks listed in excluded_tasks from total_hours."""
+    from SettingsStorage import SettingsRepository
+
+    today = date.today().strftime("%Y-%m-%d")
+    # Work: 08:00–12:00 = 4h
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '08:00', '12:00', 'WORK')",
+        (today,),
+    )
+    # Excluded: 12:30–13:30 = 1h
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '12:30', '13:30', 'Omsorgsdage')",
+        (today,),
+    )
+
+    settings = SettingsRepository()
+    settings.set_excluded_tasks(["Omsorgsdage"])
+    settings.set_lunch_excluded(False)  # turn off lunch exclusion to isolate the test
+
+    status = _build_day_status()
+    assert abs(status.total_hours - 4.0) < 0.01, (
+        f"Expected 4.0h (Omsorgsdage excluded), got {status.total_hours:.2f}h"
+    )
+    assert len(status.sessions) == 2, "Excluded session still visible in sessions table"
+
+
+def test_build_day_status_reads_target_from_settings(db):
+    """_build_day_status uses the configured daily target, not the hardcoded constant."""
+    from SettingsStorage import SettingsRepository
+
+    settings = SettingsRepository()
+    settings.set_daily_work_target(8.0)
+
+    status = _build_day_status()
+    assert status.target_hours == 8.0, (
+        f"Expected target 8.0h from settings, got {status.target_hours}"
+    )
