@@ -1,6 +1,9 @@
 import sqlite3
 
 from db.query_type import QueryType
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 class Connection:
@@ -26,12 +29,20 @@ class Connection:
         self._conn: sqlite3.Connection | None = None
 
     def __enter__(self) -> sqlite3.Cursor:
-        self._conn = sqlite3.connect(self.file)
+        try:
+            self._conn = sqlite3.connect(self.file)
+        except sqlite3.Error as exc:
+            _log.error("Failed to connect to database %r: %s", self.file, exc)
+            raise
         return self._conn.cursor()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._conn:
             if self.query_type == QueryType.WRITE and exc_type is None:
-                self._conn.commit()
+                try:
+                    self._conn.commit()
+                except sqlite3.Error as exc:
+                    _log.error("Failed to commit transaction: %s", exc)
+                    raise
             self._conn.close()
         # Return None (falsy) so exceptions propagate normally.

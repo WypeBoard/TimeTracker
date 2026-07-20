@@ -7,6 +7,9 @@ Following the same patterns established by Storage.py.
 from datetime import date, timedelta
 
 import db.repository as repo
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -21,13 +24,16 @@ def add_epic(name: str) -> int | None:
     """
     existing = repo.fetch_one("SELECT id FROM epics WHERE name = ?", (name,))
     if existing:
+        _log.warning("add_epic: epic already exists with name=%r", name)
         return None
     repo.execute(
         "INSERT INTO epics (name, created_at) VALUES (?, datetime('now'))",
         (name,),
     )
     row = repo.fetch_one("SELECT id FROM epics WHERE name = ?", (name,))
-    return row[0] if row else None
+    epic_id = row[0] if row else None
+    _log.info("add_epic: created epic id=%s name=%r", epic_id, name)
+    return epic_id
 
 
 def list_epics() -> list[tuple]:
@@ -61,6 +67,7 @@ def get_task_epic(task_id: str) -> tuple | None:
 
 def link_task_to_epic(task_id: str, epic_id: int) -> None:
     """Write a task_catalog entry linking task_id to epic_id."""
+    _log.info("link_task_to_epic: task=%r epic_id=%s", task_id, epic_id)
     repo.execute(
         "INSERT INTO task_catalog (task_id, epic_id, created_at) VALUES (?, ?, datetime('now'))",
         (task_id, epic_id),

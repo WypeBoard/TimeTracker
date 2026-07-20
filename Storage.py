@@ -10,6 +10,9 @@ import db.repository as repo
 from Constants import DB_FILE
 from db.connection import Connection
 from db.query_type import QueryType
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 def create_schema() -> None:
@@ -172,9 +175,12 @@ def create_schema() -> None:
             END
         ''')
 
+    _log.info("Database schema verified / created")
+
 
 def open_session(date_str: str, start: str, task: str) -> None:
     """Insert a new open session. `end` is NULL until the session is closed."""
+    _log.debug("open_session: date=%s start=%s task=%r", date_str, start, task)
     repo.execute(
         'INSERT INTO sessions (date, start, end, task) VALUES (?, ?, NULL, ?)',
         (date_str, start, task),
@@ -183,6 +189,7 @@ def open_session(date_str: str, start: str, task: str) -> None:
 
 def close_session(session_id: int, end: str) -> None:
     """Set the end time on the given session, closing it."""
+    _log.debug("close_session: id=%s end=%s", session_id, end)
     repo.execute(
         'UPDATE sessions SET end = ? WHERE id = ?',
         (end, session_id),
@@ -191,6 +198,7 @@ def close_session(session_id: int, end: str) -> None:
 
 def update_session_task(session_id: int, task: str) -> None:
     """Update the task/epic label on the given session."""
+    _log.debug("update_session_task: id=%s task=%r", session_id, task)
     repo.execute(
         'UPDATE sessions SET task = ? WHERE id = ?',
         (task, session_id),
