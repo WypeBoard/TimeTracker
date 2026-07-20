@@ -61,6 +61,9 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
+
+# TimeTracker application logs
+logs/
 db.sqlite3
 db.sqlite3-journal
 
