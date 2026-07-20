@@ -23,18 +23,23 @@ from EpicStorage import (
 )
 from Promark import promark_entry, compute_day_promark
 from Printer import DayStatus, print_status
+from logger import get_logger
 
 if TYPE_CHECKING:
     # AppContext is imported only for type checking; at runtime the parameter
     # is duck-typed — any object with the required methods will work.
     from app_context import AppContext
 
+_log = get_logger(__name__)
+
 
 def cmd_start(ctx: AppContext, time_override: str | None = None, epic: str | None = None) -> None:
     """Open a new work session."""
+    _log.info("cmd_start: time_override=%r epic=%r", time_override, epic)
     open_sess = get_open_session()
     if open_sess:
         _id, _date, start, _task = open_sess
+        _log.warning("cmd_start: session already running since %s", start)
         ctx.warning(f"⚠  Session already running since {start}. Use 'pause' or 'stop' first.")
         return
 
@@ -92,6 +97,7 @@ def cmd_config(ctx: AppContext) -> None:
 
 def cmd_pause(ctx: AppContext, time_override: str | None = None) -> None:
     """Close the current session without printing a day summary."""
+    _log.info("cmd_pause: time_override=%r", time_override)
     closed = _close_session(ctx, time_override)
     if closed:
         ctx.on_session_changed()
@@ -99,6 +105,7 @@ def cmd_pause(ctx: AppContext, time_override: str | None = None) -> None:
 
 def cmd_stop(ctx: AppContext, time_override: str | None = None) -> None:
     """Close the current session and trigger the end-of-day summary."""
+    _log.info("cmd_stop: time_override=%r", time_override)
     closed = _close_session(ctx, time_override)
     if not closed:
         return
@@ -126,11 +133,13 @@ def cmd_resume(ctx: AppContext, time_override: str | None = None) -> None:
     resume restores the last real work task rather than carrying the break
     task forward.
     """
+    _log.info("cmd_resume: time_override=%r", time_override)
     from SettingsStorage import SettingsRepository
 
     today_sessions = get_today_sessions()  # [(id, start, end, task)]
 
     if not today_sessions:
+        _log.warning("cmd_resume: no sessions today")
         ctx.error("⚠  No sessions today. Run 'start' first.")
         return
 
@@ -204,8 +213,10 @@ def cmd_status() -> None:
 
 def cmd_task(ctx: AppContext, epic: str, session_num: int | None = None) -> None:
     """Tag a session with a Task/Epic ID."""
+    _log.info("cmd_task: epic=%r session_num=%r", epic, session_num)
     today_sessions = get_today_sessions()  # [(id, start, end, task)]
     if not today_sessions:
+        _log.warning("cmd_task: no sessions found for today")
         ctx.error("⚠  No sessions found for today.")
         return
 
@@ -313,6 +324,7 @@ def cmd_promark(ctx: AppContext, week_str: str | None = None) -> None:
 
 def cmd_epic_add(ctx: AppContext, name: str) -> None:
     """Create a new Epic with the given free-text name."""
+    _log.info("cmd_epic_add: name=%r", name)
     result = add_epic(name)
     if result is None:
         ctx.warning("⚠  An Epic with that name already exists.")
@@ -322,6 +334,7 @@ def cmd_epic_add(ctx: AppContext, name: str) -> None:
 
 def cmd_epic_list(ctx: AppContext) -> None:
     """List all defined Epics, sorted alphabetically by name."""
+    _log.debug("cmd_epic_list")
     epics = list_epics()
     if not epics:
         ctx.info("No Epics defined yet. Use 'epic add <name>' to create one.")
@@ -332,6 +345,7 @@ def cmd_epic_list(ctx: AppContext) -> None:
 
 def cmd_epic_summary(ctx: AppContext, week_str: str | None = None) -> None:
     """Open the Epic summary overlay for the target week."""
+    _log.info("cmd_epic_summary: week_str=%r", week_str)
     today_iso = date.today().isocalendar()
     target_week = today_iso.week if week_str is None else int(week_str[1:])
     target_year = today_iso.year

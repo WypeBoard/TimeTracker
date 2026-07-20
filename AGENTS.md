@@ -261,6 +261,8 @@ Suggested sections for a documentation file:
 
 ## Limitations
 
+## Decisions
+
 ## Notes
 
 ## Related Features
@@ -273,6 +275,9 @@ feature/<feature>.md
 ```
 
 rather than user-facing documentation.
+
+When a feature is considered completed.
+It should be moved into feature/completed/<feature>.md
 
 ---
 
