@@ -114,6 +114,48 @@ Full audit trail for `task_catalog`. Populated automatically by triggers.
 
 ---
 
+### `settings` table
+
+Key-value store for user-configurable application settings.
+
+| Column       | Type | Notes |
+|--------------|------|-------|
+| `key`        | TEXT | Primary key — the setting name |
+| `value`      | TEXT | String-encoded value (decimal, `"true"`/`"false"`, or JSON) |
+| `updated_at` | TEXT | ISO-8601 **local** datetime of the last write (human-readable audit) |
+
+`updated_at` is the local time at which `SettingsStorage.py` wrote the row.
+It is a human-readable "last edited" timestamp and is distinct from the UTC
+audit timestamp `h_timestamp` written by triggers.
+
+Known keys and their defaults (when the key is absent):
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `daily_work_target_hours` | decimal string | `"7.4"` | Daily work target in hours |
+| `lunch_excluded` | `"true"` / `"false"` | `"true"` | Whether Lunch sessions are excluded from hours total |
+| `lunch_promark_offset_minutes` | integer string | `"0"` | Expected lunch duration for the Promark offset |
+| `excluded_tasks` | JSON array of strings | `"[]"` | Task identifiers excluded from hours totals |
+| `always_separate_tasks` | JSON array of strings | `"[]"` | Task identifiers appearing as standalone Promark rows |
+
+Defaults are encoded in `SettingsStorage.SettingsRepository` — the application
+works correctly with an empty `settings` table.
+
+### `settings_h` table (history / shadow)
+
+Full audit trail for `settings`. Populated automatically by triggers.
+
+| Column        | Type    | Notes                                       |
+|---------------|---------|---------------------------------------------|
+| `h_id`        | INTEGER | Primary key, auto-incremented               |
+| `h_operation` | TEXT    | `'I'` Insert, `'U'` Update, `'D'` Delete   |
+| `h_timestamp` | TEXT    | ISO-8601 UTC datetime of the operation      |
+| `key`         | TEXT    | Mirrors `settings.key`                      |
+| `value`       | TEXT    | Mirrors `settings.value`                    |
+| `updated_at`  | TEXT    | Mirrors `settings.updated_at`               |
+
+---
+
 ## Code Structure
 
 ```
@@ -124,17 +166,19 @@ db/
     repository.py     — execute / fetch_one / fetch_many helpers
 Storage.py            — session domain layer (sessions / sessions_h DDL)
 EpicStorage.py        — Epic domain layer (epics / task_catalog DDL queries)
+SettingsStorage.py    — settings domain layer (settings / settings_h queries)
 Constants.py          — DB_FILE path constant
 ```
 
 ### Layer rules
 
-- `Commands.py` → calls `Storage.py` and `EpicStorage.py` only.
-- `Storage.py` / `EpicStorage.py` → call `db/repository.py` only (except
-  `create_schema` in `Storage.py`, which uses `Connection` directly to batch
-  all DDL in one transaction).
+- `Commands.py` → calls `Storage.py`, `EpicStorage.py`, and `SettingsStorage.py` only.
+- `Storage.py` / `EpicStorage.py` / `SettingsStorage.py` → call `db/repository.py`
+  only (except `create_schema` in `Storage.py`, which uses `Connection` directly
+  to batch all DDL in one transaction).
 - `db/repository.py` → calls `db/connection.py` only.
-- Nothing outside `db/` imports from `db/` except `Storage.py` and `EpicStorage.py`.
+- Nothing outside `db/` imports from `db/` except `Storage.py`, `EpicStorage.py`,
+  and `SettingsStorage.py`.
 
 ---
 
@@ -150,12 +194,14 @@ setup is required.
 | Command          | Storage call(s)                                          |
 |------------------|----------------------------------------------------------|
 | `start`          | `open_session(date, start, task)`                        |
+| `lunch`          | `open_session(date, start, "Lunch")`                     |
 | `pause`          | `close_session(id, end)`                                 |
 | `stop`           | `close_session(id, end)`                                 |
 | `restart`        | `close_session(id, end)` + `open_session(...)`           |
 | `task`           | `update_session_task(id, epic)`                          |
 | `epic add`       | `add_epic(name)`                                         |
 | Task–Epic modal  | `add_epic(name)` (optional) + `link_task_to_epic(task_id, epic_id)` |
+| `config` → Save  | `SettingsRepository.set_*()` for each changed setting    |
 
 ### Commands that read data
 
@@ -163,9 +209,10 @@ setup is required.
 |------------------|----------------------------------------------------------|
 | `status`         | `get_today_sessions()`, `get_open_session()`             |
 | `log`            | `read_log()`                                             |
-| `promark`        | `read_log()`                                             |
+| `promark`        | `read_log()`, `SettingsRepository.get_*()`               |
 | `epic list`      | `list_epics()`                                           |
 | `epic summary`   | `get_epic_summary_data(week_num, year)`                  |
+| config screen    | `SettingsRepository.get_*()` (on open)                   |
 
 ---
 
@@ -199,3 +246,4 @@ setup is required.
 
 - `commands.md` — documents all CLI commands that read/write session data.
 - `docs/epic-catalog.md` — Epic Catalog feature: Epics and task–Epic linking.
+- `docs/configuration.md` — configuration screen and the settings table.

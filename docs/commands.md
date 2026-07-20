@@ -68,6 +68,40 @@ Output examples:
 
 ---
 
+### `lunch [hhmm]`
+
+Opens a new session with `task = "Lunch"`. Use this to clock the lunch break
+as a first-class session rather than typing `start 1200 Lunch` manually.
+
+```
+lunch
+lunch 1200
+```
+
+- `hhmm` — optional four-digit time override. Defaults to `now`.
+- If a session is already running, it is **automatically closed** at `hhmm`
+  (or now) before the Lunch session is opened — no separate `pause` is needed.
+- Lunch sessions are **never** linked to an Epic — the Task–Epic modal does not
+  appear.
+- Whether Lunch sessions count toward the daily working-hours target is
+  controlled by the **Lunch** section of the configuration screen.
+
+Output example (when a session was already running):
+
+```
+⏸  Closed #1 — 08:30 → 12:00
+▶  Started Lunch at 12:00
+```
+
+Output example (no prior session):
+
+```
+▶  Started Lunch at 12:00
+▶  Started Lunch at 12:00 (manually set)
+```
+
+---
+
 ### `pause [hhmm]`
 
 Closes the current session. Use this for short breaks when you intend to
@@ -93,14 +127,26 @@ stop 1715
 
 ### `resume [hhmm]`
 
-Opens a new session, carrying the Task/Epic of the most recent session
+Opens a new session, carrying the Task/Epic of the most recent **work** session
 forward. The natural inverse of `pause`: clock out → break → clock back in.
+
+"Work" sessions are those whose task is **not** one of the following:
+- `"Lunch"` (always skipped)
+- Any task in the **Excluded from working hours** list (e.g. `commute`, `coffee walk`)
+- Any task in the **Always separate** list (e.g. `Sick`, `Doctor`, `Bank meeting`)
 
 Covers two cases:
 - **Open session exists:** closes it at `hhmm` (or now), then opens a new
-  session with the same epic — equivalent to `pause` + `start <same_epic>`.
+  session with the carried task — equivalent to `pause` + `start <same_epic>`.
 - **No open session, but closed sessions exist today:** opens a new session
-  carrying the last session's epic.
+  carrying the last work session's task.
+
+The typical lunchtime flow:
+
+```
+lunch 1200      # closes work session, starts Lunch
+resume 1230     # closes Lunch, resumes the pre-lunch task
+```
 
 ```
 resume
@@ -239,14 +285,41 @@ Output example:
 
 ### `promark [wNN]`
 
-Writes the Promark-style table (single consolidated start/end per day,
-including a 30-minute lunch offset) to the Output panel. Defaults to the
-current week; `wNN` selects a specific ISO week number.
+Writes the Promark-style table to the Output panel. Defaults to the current
+week; `wNN` selects a specific ISO week number.
 
 ```
 promark
 promark w23
 ```
+
+The table applies the following settings (configured via the `config` screen):
+
+- **Always-separate tasks**: listed tasks appear as standalone rows (hours only,
+  no synthetic time range) instead of being merged into the consolidated day
+  entry.
+- **Lunch excluded**: if enabled, Lunch sessions are removed from the normal
+  session pool before computing the consolidated start/end range.
+- **Promark offset**: if set, `max(0, offset_minutes − actual_lunch_minutes)`
+  is added to the consolidated day's synthetic end time.
+
+Sessions tagged as excluded tasks (from the configuration screen) are still
+included in the Promark output — exclusion only affects hours totals and
+progress bars, not Promark rows.
+
+---
+
+### `config`
+
+Opens the configuration screen.
+
+```
+config
+```
+
+Alternative: press `Ctrl+,`.
+
+See `docs/configuration.md` for full reference.
 
 ---
 
@@ -261,9 +334,10 @@ promark w23
 
 ## Notes
 
-- `resume` always carries the Task/Epic of the *most recent* session (open
-  or closed); there is no flag to override the carried epic in the same call
-  (use `task` afterwards if needed).
+- `resume` carries the Task/Epic of the *most recent work session* — skipping
+  `Lunch`, tasks in the **Excluded from working hours** list, and tasks in the
+  **Always separate** list. There is no flag to override the carried epic in
+  the same call (use `task` afterwards if needed).
 - One task per session is by design. For genuine task switches use
   `pause` → `start <epic>` or `resume` followed by `task`.
 
@@ -274,3 +348,4 @@ promark w23
 - `docs/sqlite-datasource.md` — database schema and storage layer
 - `docs/tui.md` — TUI usage and keybinding reference
 - `docs/epic-catalog.md` — Epic Catalog: managing Epics and the task–Epic modal
+- `docs/configuration.md` — configuration screen: settings and their effects

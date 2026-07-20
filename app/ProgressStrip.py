@@ -51,13 +51,20 @@ class ProgressStrip(Static):
         from datetime import datetime
         from Commands import _build_day_status
         from Storage import read_log
-        from Constants import TARGET_HOURS
+        from Promark import session_hours
+        from SettingsStorage import SettingsRepository
 
         now = datetime.now()
         day_status = _build_day_status(now)
 
         today_logged = day_status.total_so_far
         today_target = day_status.target_hours
+
+        # Read settings for week total filtering.
+        settings = SettingsRepository()
+        lunch_excluded = settings.get_lunch_excluded()
+        excluded_tasks = settings.get_excluded_tasks()
+        target_hours_per_day = settings.get_daily_work_target()
 
         # --- Week totals -------------------------------------------------------
         # read_log() returns only closed sessions; today's live total from
@@ -80,16 +87,25 @@ class ProgressStrip(Static):
             d = monday + timedelta(days=i)
             d_str = d.strftime("%Y-%m-%d")
             if d_str == today_str:
-                # Use the live total (includes any active session).
+                # Use the live total (includes any active session, already filtered).
                 if day_status.total_so_far > 0 or day_status.active_start:
                     week_total += day_status.total_so_far
                     days_with_sessions += 1
             elif d_str in days:
-                week_total += days[d_str]["total"]
-                days_with_sessions += 1
+                # Filter past-day sessions using the same rules as _build_day_status.
+                raw_sessions = days[d_str]["sessions"]  # (start, end, task)
+                filtered = [
+                    (s, e, t) for s, e, t in raw_sessions
+                    if not (lunch_excluded and t == "Lunch")
+                    and t not in excluded_tasks
+                ]
+                day_hours = sum(session_hours(s, e) for s, e, _ in filtered)
+                if filtered:  # only count days that have non-excluded sessions
+                    week_total += day_hours
+                    days_with_sessions += 1
 
-        # Dynamic target: only count days that actually have sessions.
-        week_target = TARGET_HOURS * days_with_sessions if days_with_sessions > 0 else 0.0
+        # Dynamic target: only count days that actually have non-excluded sessions.
+        week_target = target_hours_per_day * days_with_sessions if days_with_sessions > 0 else 0.0
 
         rows = [
             _progress_row("Today", today_logged, today_target),
