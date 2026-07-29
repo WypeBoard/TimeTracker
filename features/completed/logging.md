@@ -1,17 +1,12 @@
 # Feature: Application Logging
 
-Status: Documented
+Status: Completed
 
 ## Purpose
 
 Capture runtime events, warnings, and errors to persistent log files so that
 application crashes or unexpected behavior can be diagnosed after the fact —
 including by an LLM reviewing the logs.
-
-## Next Step
-
-> **Current status:** Documented
-> **To reach Completed:** User confirms the documentation is accurate and the feature is working as described.
 
 ## Requirements
 
@@ -81,7 +76,7 @@ including by an LLM reviewing the logs.
 
 ## Manual Changes
 
-*(none yet)*
+*(none)*
 
 ## Documentation Plan
 

@@ -34,13 +34,23 @@ class LogScreen(ModalScreen):
     def _render_week(self) -> None:
         from Storage import read_log
         from Printer import build_log_week_panel
+        from SettingsStorage import SettingsRepository
+
+        settings = SettingsRepository()
+        lunch_excluded = settings.get_lunch_excluded()
+        excluded_tasks = settings.get_excluded_tasks()
+
         days = read_log()
         week_days = {
             d: info for d, info in days.items()
             if date.fromisoformat(d).isocalendar().week == self._week_num
             and date.fromisoformat(d).isocalendar().year == self._year
         }
-        panel = build_log_week_panel(week_days, self._week_num, self._year)
+        panel = build_log_week_panel(
+            week_days, self._week_num, self._year,
+            lunch_excluded=lunch_excluded,
+            excluded_tasks=excluded_tasks,
+        )
         self.query_one("#log-content", Static).update(panel)
     def action_prev_week(self) -> None:
         if self._week_num > 1:
