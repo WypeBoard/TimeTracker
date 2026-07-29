@@ -49,8 +49,17 @@ class EpicSummaryScreen(ModalScreen):
     def _render_week(self) -> None:
         from EpicStorage import get_epic_summary_data
         from Printer import build_epic_summary_panel
+        from SettingsStorage import SettingsRepository
 
-        data = get_epic_summary_data(self._week_num, self._year)
+        settings = SettingsRepository()
+        lunch_excluded = settings.get_lunch_excluded()
+        excluded_tasks = settings.get_excluded_tasks()
+
+        data = get_epic_summary_data(
+            self._week_num, self._year,
+            lunch_excluded=lunch_excluded,
+            excluded_tasks=excluded_tasks,
+        )
         panel = build_epic_summary_panel(data, self._week_num, self._year)
         self.query_one("#summary-content", Static).update(panel)
 

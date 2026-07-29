@@ -1,6 +1,6 @@
 # Feature: Obsidian Notes Integration
 
-Status: Brainstorming
+Status: Refinement
 
 ## Purpose
 
@@ -21,6 +21,9 @@ The two automated operations, triggered whenever a session is started:
    `## breadcrumb navigation` section contains a `[[NN]]` link for every week in the
    `uge` frontmatter array. Entries are only ever added, never removed.
 
+Additionally, a **read-only Opgave panel** is displayed in the TUI showing the content
+of the active session's Opgave file. This panel is always read-only.
+
 Status files (`Status/2026/NN.md`) are **never written to** — Obsidian's Dataview query
 auto-discovers tasks from `uge` frontmatter, so they require no maintenance.
 
@@ -28,15 +31,13 @@ auto-discovers tasks from `uge` frontmatter, so they require no maintenance.
 
 ## Prerequisites
 
-This feature may not be implemented until the following features are in `Implemented`
-status:
+Both prerequisites are now complete:
 
-- **Epic Catalog** (`features/epic-catalog.md`) — the epic key is the Opgave file name;
-  the epic description becomes the `beskrivelse` frontmatter value. Without the Epic
-  Catalog, there is no stable epic identity or description to write.
-- **Configuration View** (`features/configuration-view.md`) — the vault root path is
-  stored as a setting in the `settings` table. Without Configuration View the settings
-  table does not exist and there is nowhere to persist the vault path.
+- **Epic Catalog** — `Completed` (`features/completed/epic-catalog.md`)
+- **Configuration View** — `Documented` (`features/configuration-view.md`)
+
+The `vault_path` setting will be added to the existing Configuration screen as part of
+this feature (see Requirements — Configuration screen).
 
 ---
 
@@ -127,9 +128,203 @@ Status file (25.md)
 
 ---
 
+## Requirements
+
+### Configuration screen — vault path
+
+- A **Vault path** field is added to the existing Configuration screen (opened via
+  `config` command or `Ctrl+,`).
+- The field accepts a plain file-system path string (e.g. `C:\Users\...\Vault`).
+- It is stored in the `settings` table under the key `vault_path`.
+- The field is optional — leaving it blank disables the integration silently.
+- Validation: if a path is entered, it must point to an existing directory. An invalid
+  path shows an inline error and blocks Save.
+
+### Vault folder layout
+
+The integration uses two hard-coded subfolders under `vault_path`:
+
+| Folder | Purpose | Contents |
+|--------|---------|----------|
+| `{vault_path}/tasks/` | Task (Opgave) files | One `.md` file per task identifier |
+| `{vault_path}/epics/` | Epic documentation files | One `.md` file per epic name |
+
+- Both folders are created automatically if they do not exist when a sync runs.
+- The `vault_path` directory itself must already exist (validated on config save).
+- Folder names are hard-coded for v1. Configurable paths are a future enhancement.
+
+### Filename sanitisation
+
+Task identifiers and epic names are used as filenames. A **replacement map** handles
+special characters:
+
+```python
+# Replacement map: character → replacement string.
+# Empty string means "remove the character".
+# Characters not in this map are kept as-is.
+FILENAME_REPLACEMENTS: dict[str, str] = {
+    "§": "paragraph",
+    "/": "",
+    "\\": "",
+    ":": "",
+    "*": "",
+    "?": "",
+    '"': "",
+    "<": "",
+    ">": "",
+    "|": "",
+}
+```
+
+**Algorithm:**
+1. For each character in the input string:
+   - If it has an entry in `FILENAME_REPLACEMENTS` → substitute the replacement value
+     (which may be empty, effectively removing the character).
+   - Otherwise → keep as-is (spaces, accented characters, hyphens, etc. preserved).
+2. Strip leading/trailing whitespace from the result.
+3. If the result is empty after sanitisation → abort sync with a warning.
+
+Examples:
+- `EVD-4325` → `EVD-4325.md`
+- `Valuation principle §14` → `Valuation principle paragraph14.md`
+- `Mortgage valuation` → `Mortgage valuation.md`
+
+All replaceable characters live in a single `dict`. Characters mapped to `""` are
+removed; characters mapped to a non-empty string get a meaningful substitution. The
+map is stored as a Python `dict` in code. A future iteration will expose it as a
+configurable mapping in the Configuration screen (stored as JSON in the `settings`
+table).
+
+### File sync — triggered on session start
+
+When a session is started (`cmd_start`), after the session is written to the database:
+
+1. If `vault_path` is not configured → skip silently.
+2. If the session's `task` field is empty → skip silently.
+3. If the session's `task` is in `excluded_tasks` or `always_separate_tasks` → skip
+   silently. These are administrative task identifiers (e.g. `Lunch`, `commute`, `Sick`,
+   `Doctor`, `Bank meeting`) that have no associated ticket.
+4. Otherwise → run the sync:
+   a. Look up the task's epic via `task_catalog` → `epics`. If the task has an epic
+      link, use the epic `name` as `beskrivelse`. If no epic link exists, `beskrivelse`
+      is an empty string.
+   b. Derive the current ISO week (`YYYY-Www`) from the session date.
+   c. Sanitise the task identifier to produce a safe filename.
+   d. If `{vault_path}/tasks/{sanitised_task}.md` does not exist → **create** it.
+   e. If the file exists → **sync** `uge` and `## breadcrumb navigation`.
+   f. If the task has an epic link and `{vault_path}/epics/{sanitised_epic_name}.md`
+      does not exist → **create** the epic file.
+5. Failure at any point in step 4 must **not** prevent the session from being recorded.
+   A warning is emitted via `ctx.warning()`; the session is committed regardless.
+
+### Create task file
+
+New file written to `{vault_path}/tasks/{sanitised_task}.md`:
+
+```markdown
+---
+beskrivelse: {epic name, or empty string if no epic link}
+state: Todo
+uge:
+  - {current ISO week}
+---
+
+## breadcrumb navigation
+- [[{two-digit week number}]]
+
+## Opgave
+
+## Tasks
+
+## Accept
+```
+
+- Two-digit week number: extracted from ISO week, padded with leading zero
+  (`2026-W07` → `07`).
+- Written atomically via a `.tmp` file and `os.replace()`.
+- File encoding: UTF-8.
+
+### Create epic file
+
+New file written to `{vault_path}/epics/{sanitised_epic_name}.md`:
+
+```markdown
+# {epic name}
+```
+
+- Created only once — the integration never updates epic files after creation.
+- Minimal template (heading only). A richer template will be designed in a future
+  iteration.
+- Written atomically via `.tmp` + `os.replace()`.
+- File encoding: UTF-8.
+
+### Sync operation (existing task file)
+
+1. Read the file. Parse YAML frontmatter using PyYAML.
+2. If the current ISO week is not in `uge` → append it. Write the `uge` block back
+   via string manipulation (to preserve key order and formatting).
+3. Extract two-digit week numbers from the full `uge` list.
+4. Parse `## breadcrumb navigation` for existing `[[NN]]` entries.
+5. Append any week numbers present in `uge` but missing from the breadcrumb section,
+   maintaining sorted order.
+6. Write the file back atomically only if any change was made.
+7. If the `## breadcrumb navigation` section is missing entirely → create it before
+   the first body section (`## Opgave`) and add entries.
+8. If `uge` is empty → no-op.
+9. If parse fails at any step → abort without writing; emit `ctx.warning()`.
+
+### Read-only Opgave panel
+
+- A new `OpgavePanel` widget is always present in the TUI layout, between the top
+  panel row (`TodayPanel` / `WeekPanel`) and `TaskSummaryPanel`.
+- The panel uses `height: 1fr` and takes the remaining vertical space.
+- The panel is **always read-only**. No input, no edit mode.
+- **No user action is needed to show the panel** — it appears automatically whenever a
+  session with a task is active. The user does not configure or toggle it.
+
+#### Content displayed
+
+| Condition | Panel shows |
+|-----------|-------------|
+| No active session | *"No active session"* placeholder |
+| Active session, task is empty | *"No task set"* placeholder |
+| Active session, task is administrative (excluded/always-separate) | *"No task file for this task"* placeholder |
+| `vault_path` not configured | *"Vault not configured"* placeholder |
+| Task file missing after sync attempt failed | Warning message |
+| File exists | Task identifier + epic name header, then `## Opgave`, `## Tasks`, `## Accept` content |
+
+- `## breadcrumb navigation` is never shown in the panel.
+- Empty sections are shown as empty — no placeholder text is injected into blank
+  sections.
+
+#### Refresh behaviour
+
+The panel refreshes on the same hook as all other session panels
+(`refresh_session_panels()` in `TimeTrackerApp`). It does not watch the file system.
+
+### Dependency
+
+- PyYAML (`pyyaml`) added to `requirements.txt`.
+
+---
+
 ## Non-Goals
 
-_Not yet defined — this section will be filled in during Refinement._
+- **No Status file writes** — Dataview auto-discovers tasks; Status files are never
+  touched by this integration.
+- **No in-app editing** — the Opgave panel is strictly read-only. In-app editing is a
+  separate future feature.
+- **No dedicated epic filter setting** — filtering is handled by the existing
+  `excluded_tasks` and `always_separate_tasks` settings. Epics in either list are
+  administrative tasks (e.g. `Lunch`, `Omsorgsdage`) and do not get Opgave files.
+- **No file system watching** — the panel re-reads the file on session change only; it
+  does not poll or watch for external edits.
+- **No Obsidian process integration** — TimeTracker does not communicate with Obsidian
+  directly. It only reads and writes plain files.
+- **No bulk backfill** — the integration only acts on session start. It does not
+  retroactively scan past sessions to create or update missing Opgave files.
+- **No `state` management** — the `state` frontmatter field is set to `Todo` at creation
+  and never written again. State transitions remain manual in Obsidian.
 
 ---
 
@@ -137,11 +332,18 @@ _Not yet defined — this section will be filled in during Refinement._
 
 ~~1. **Trigger**~~ — **Resolved:** Auto-triggered on session start.
 
-~~2. **Ticket ID source**~~ — **Resolved:** The epic key from the Epic Catalog is the
-Opgave file name. Hard dependency on Epic Catalog.
+~~2. **Ticket ID source**~~ — **Resolved (revised 2026-07-21):** The session's **task
+identifier** (the value stored in the `task` column of `sessions`) is used as the
+Opgave filename. This is the string the user types in `start <task>` or sets via the
+`task` command. The Epic Catalog is used only to determine *whether* the task is linked
+to an epic (and therefore eligible for sync) — it does not provide the filename.
 
-~~3. **New file template — `beskrivelse`**~~ — **Resolved:** Populated from the epic's
-description in the Epic Catalog. Left blank only if the epic has no description.
+~~3. **New file template — `beskrivelse`**~~ — **Resolved (revised 2026-07-21):** The
+`epics` table has no `description` column — it only stores `name`. The `beskrivelse`
+frontmatter field is populated from the **epic name** (the group label the task is
+linked to via `task_catalog`). If the task has no epic link, `beskrivelse` is left as
+an empty string. Full task documentation lives in the Opgave file itself (in the vault
+filesystem), not in the database.
 
 ~~4. **Breadcrumb sync direction**~~ — **Resolved:** Additive only. Entries are never
 removed.
@@ -149,28 +351,40 @@ removed.
 ~~5. **Vault path**~~ — **Resolved:** Stored in the `settings` table. Hard dependency
 on Configuration View.
 
-6. **YAML frontmatter parsing** — Option B (string manipulation, no new dependency) is
-   recommended. Not yet explicitly confirmed. Needs user sign-off during Refinement.
+~~6. **YAML frontmatter parsing**~~ — **Resolved:** PyYAML (`pyyaml`) is acceptable.
+Added to `requirements.txt`. Used for reading; `uge` block written back via string
+manipulation to avoid key reordering / reformatting.
 
-7. **Write safety** — Atomic writes via `os.replace()` are planned. No new dependency.
-   Needs explicit confirmation during Refinement.
+~~7. **Write safety**~~ — **Resolved:** Atomic writes via `os.replace()` are confirmed.
+No external library needed.
 
-8. **`uge` update on session start** — When a session starts:
-   - If the file does not exist → create it with `uge: [current week]`.
-   - If the file exists and `uge` already contains the current week → sync breadcrumb
-     only (no write to `uge` needed).
-   - If the file exists but the current week is missing from `uge` → add the current
-     week to `uge`, then sync breadcrumb.
-   The third case requires a write to the frontmatter. Confirm this behaviour is desired.
+~~8. **`uge` update on session start**~~ — **Resolved:** All three cases confirmed:
+  - File does not exist → create with current week.
+  - File exists, current week already in `uge` → sync breadcrumb only.
+  - File exists, current week missing from `uge` → add week to `uge`, then sync breadcrumb.
 
-9. **Epics without a ticket ID pattern** — The vault uses Jira-style IDs (`EVD-XXXX`).
-   If the Epic Catalog contains epics that do not follow this pattern (e.g. `Lunch`,
-   `Omsorgsdage`), should they also get Opgave files, or should only pattern-matching
-   epics be eligible? A configurable filter (e.g. `EVD-` prefix only) could limit the
-   integration to "real" tickets.
+~~9. **Epics without a ticket ID pattern**~~ — **Resolved:** No dedicated filter setting.
+The `excluded_tasks` and `always_separate_tasks` settings identify administrative tasks
+(e.g. `Lunch`, `Omsorgsdage`, `commute`, `Sick`). These are **task identifiers** checked
+against the session's `task` field — not epic names. Sessions whose task is in either
+list are skipped silently. All other sessions with a non-empty task trigger the
+integration automatically.
 
-10. **Vault path setting key** — What key name to use in the `settings` table
-    (e.g. `obsidian_vault_path`)? Confirm during Refinement alongside Configuration View.
+~~10. **Vault path setting key**~~ — **Resolved:** Key name is `vault_path`.
+Kept generic — not Obsidian-specific, allowing the setting to be repurposed if needed.
+
+~~11. **Folder structure within the vault**~~ — **Resolved (2026-07-29):** Hard-code
+default subfolder names for the first build. The integration uses
+`{vault_path}/tasks/` for Opgave files and `{vault_path}/epics/` for epic-level
+documentation. No custom path configuration in v1 — configurable paths are a future
+enhancement. Subfolders are created automatically if missing.
+
+~~12. **Filename sanitisation**~~ — **Resolved (2026-07-29):** Use a **replacement map**
+(Python `dict`). Characters with meaningful replacements get substituted (e.g.
+`§` → `paragraph`). Characters that are illegal on Windows (`/\:*?"<>|`) and have no
+meaningful replacement are simply removed. The map is stored as a dict in code,
+making it straightforward to expose as a configurable mapping in the Configuration
+screen in a future iteration.
 
 ---
 
@@ -248,23 +462,16 @@ uge:
 
 ### YAML frontmatter parsing approach
 
-**Option B — string manipulation (no new dependency):**
-- Split the file on `---` delimiters to isolate the frontmatter block.
-- Use line-by-line parsing to read/write the `uge` list.
-- Acceptable because the frontmatter schema is small and stable (three known keys, flat
-  types only).
-- Risk: fragile on unusual YAML formatting. Mitigation: treat parse failure as a hard
-  error and abort without writing.
+~~**Option B — string manipulation (no new dependency)**~~ — superseded.
 
-**Option A — PyYAML (`pyyaml`):**
-- Requires adding `pyyaml` to `requirements.txt`.
-- Handles all YAML edge cases correctly.
-- Risk: may reformat the YAML block on write (reorder keys, change quoting style).
-  Mitigation: use PyYAML only for reading; write the `uge` block back via string
-  manipulation to avoid reformatting.
+**Confirmed: Option A — PyYAML (`pyyaml`):**
+- PyYAML used for **reading** the frontmatter reliably.
+- The `uge` block is written back via **string manipulation** to preserve key order
+  and formatting (avoiding PyYAML's tendency to reorder keys or change quoting).
+- `pyyaml` added to `requirements.txt`.
 
-Recommendation: **Option B** for initial implementation. Migrate to PyYAML if string
-manipulation proves fragile in practice.
+This hybrid approach gets the correctness of a real YAML parser for reads, and
+the formatting stability of string manipulation for writes.
 
 ---
 
@@ -306,19 +513,121 @@ The sync is a best-effort side-effect, not a transaction.
 
 ### Epic filter — which epics get Opgave files?
 
-Not all epics in the Epic Catalog are Jira tickets deserving a formal task document.
-Examples of epics that should probably not create Opgave files:
-- `Lunch` (excluded from working hours)
-- `Omsorgsdage` (always-separate, administrative)
-- `Misc` / `Non-billable`
+**Confirmed (and clarified 2026-07-20):** The `excluded_tasks` and `always_separate_tasks`
+settings identify administrative tasks that have **no epic** attached (e.g. `Lunch`,
+`Omsorgsdage`). These tasks are logged by task name only — not against a Jira ticket —
+so there is nothing to create an Opgave file for. The integration skips them silently.
 
-A configurable prefix filter (e.g. only epics matching `EVD-\d+`) stored as a setting
-in the `settings` table would let the user control which epics trigger Opgave creation.
-If no filter is configured, all epics create Opgave files (safe default — Obsidian just
-gets extra files).
+All other sessions carry a real epic key, and the Opgave panel appears for them
+automatically. There is no opt-in mechanism and no user configuration required to show
+the panel for a given epic.
 
-Alternatively: a boolean flag `obsidian_sync` could be added to the Epic Catalog itself,
-letting the user opt individual epics in/out at epic-definition time.
+---
+
+### Vault folder structure (added 2026-07-21, resolved 2026-07-29)
+
+The original design assumed a hard-coded `Opgaver/` subfolder. User feedback during
+refinement raised two concerns:
+
+1. The folder name should be configurable, not hard-coded to `Opgaver/`.
+2. An additional **epics folder** is needed for epic-level documentation (one markdown
+   file per epic, where the epic's description and long-form notes live).
+
+**Current epic names in the database:** `Valuation principle §14`, `Miscellaneous`,
+`Mortgage valuation`, `Mainframe Exit`. These are human-readable group labels — not
+Jira ticket IDs. The task identifier typed by the user (e.g. `EVD-4325`) is the value
+stored in the session's `task` field and is the natural Opgave filename.
+
+**Resolution:** Hard-code default subfolder names for the first build:
+- `{vault_path}/tasks/` — Opgave files (one per task identifier).
+- `{vault_path}/epics/` — epic-level documentation (one per epic name). Created
+  automatically when the first task linked to that epic triggers a sync. Uses a
+  minimal empty template for now (just a heading). A richer template will be designed
+  later.
+
+Subfolders are created automatically if they don't exist. Configurable paths are
+deferred to a future iteration.
+
+---
+
+### Filename sanitisation (added 2026-07-21, resolved 2026-07-29)
+
+The session's task identifier becomes the Opgave filename. Task identifiers are
+free-text strings — the user types them directly. Examples from the current data:
+
+- `EVD-2213` → `EVD-2213.md` ✓ (safe)
+- `Valuation principle §14` → contains space and `§` (needs handling)
+
+**Resolution:** Use a single **replacement map** stored as a Python `dict`.
+
+```python
+# Replacement map: character → replacement string.
+# Empty string means "remove the character".
+# Characters not in this map are kept as-is.
+FILENAME_REPLACEMENTS: dict[str, str] = {
+    "§": "paragraph",
+    "/": "",
+    "\\": "",
+    ":": "",
+    "*": "",
+    "?": "",
+    '"': "",
+    "<": "",
+    ">": "",
+    "|": "",
+}
+```
+
+**Sanitisation algorithm:**
+1. For each character in the input string:
+   - If it has an entry in `FILENAME_REPLACEMENTS` → substitute the replacement value
+     (which may be empty, effectively removing the character).
+   - Otherwise → keep as-is (spaces, accented characters, hyphens, etc. preserved).
+2. Strip leading/trailing whitespace from the result.
+3. If the result is empty after sanitisation → abort sync with a warning.
+
+Examples:
+- `EVD-4325` → `EVD-4325.md`
+- `Valuation principle §14` → `Valuation principle paragraph14.md`
+- `Mortgage valuation` → `Mortgage valuation.md`
+
+**Future:** The replacement map will be exposed as a configurable mapping in the
+Configuration screen, stored as a JSON dict in the `settings` table. The in-code dict
+serves as the default/fallback.
+
+---
+
+### Refinement review findings (added 2026-07-21)
+
+Issues identified during code audit against the feature requirements:
+
+**1. No `description` column on `epics` table.**
+The `epics` table schema is `(id, name, created_at)`. There is no description field.
+**Resolution (user feedback):** Epic descriptions live in the filesystem (vault), not
+the database. The `beskrivelse` frontmatter field is populated from the epic `name`.
+Long-form documentation belongs in the vault's epics folder, not in the DB.
+
+**2. Epic name vs. task identifier — which is the filename?**
+The session stores a `task` field (e.g. `EVD-4325`). The `task_catalog` links that
+task to an epic `name` (e.g. `Mortgage valuation`). The Opgave file should be named
+after the **task identifier** (the specific ticket/item), not the epic name (the group).
+
+**3. Filter logic is task-based, not epic-based.**
+The `excluded_tasks` and `always_separate_tasks` settings contain **task identifiers**
+(e.g. `Lunch`, `commute`, `Sick`, `Doctor`, `Bank meeting`). The integration checks the
+session's `task` field against these lists. If the task is in either list → skip.
+
+**4. Skip condition ordering.**
+The precise skip logic on session start:
+1. `vault_path` not configured → skip
+2. Session task is empty (`""`) → skip
+3. Session task is in `excluded_tasks` or `always_separate_tasks` → skip
+4. Otherwise → run sync (look up epic via `get_task_epic(task)` for `beskrivelse`)
+
+**5. `Opgaver/` directory creation.**
+If `{vault_path}/tasks/` (or whichever configured folder) does not exist, it should be
+created automatically. The vault path itself must exist (validated on config save), but
+the subfolders are the integration's responsibility.
 
 ---
 
@@ -335,11 +644,100 @@ letting the user opt individual epics in/out at epic-definition time.
 
 ---
 
+---
+
+### In-app note display — read-only Opgave panel
+
+**Context:** The user confirmed that in-app editing is out of scope for this feature.
+The goal is to get a reliable read-only note view working first. Editing is a separate
+future feature.
+
+#### Panel placement
+
+The Opgave panel sits between the top panel row (`TodayPanel` / `WeekPanel`) and the
+`TaskSummaryPanel`, taking all remaining vertical space that is not claimed by other
+panels. In the layout diagram:
+
+```
+┌─ Header ─────────────────────────────────────────────┐
+│  ┌─ Today ──────────────────┐  ┌─ Week ─────────────┐ │
+│  │                          │  │                    │ │
+│  └──────────────────────────┘  └────────────────────┘ │
+│  ┌─ Opgave ───────────────────────────────────────────┐│   ← NEW
+│  │  EVD-4325 — Payment gateway refactor               ││
+│  │  ## Opgave  [content]                              ││
+│  │  ## Tasks   [content]                              ││
+│  │  ## Accept  [content]                              ││
+│  └───────────────────────────────────────────────────┘│
+│  ┌─ Task Summary ─────────────────────────────────────┐│
+│  │  ...                                               ││
+│  └───────────────────────────────────────────────────┘│
+│  ┌─ Progress ─────────────────────────────────────────┐│
+│  │  ...                                               ││
+│  └───────────────────────────────────────────────────┘│
+│  ┌─ Output ───────────────────────────────────────────┐│
+│  └───────────────────────────────────────────────────┘│
+│  > command input                                       │
+└─ Footer ──────────────────────────────────────────────┘
+```
+
+The panel uses `height: 1fr` to fill the available space.
+
+#### What the panel shows
+
+1. **Header line:** Epic key and description (e.g. `EVD-4325 — Payment gateway refactor`),
+   sourced from the Epic Catalog.
+2. **`## Opgave` section** — free-text task description.
+3. **`## Tasks` section** — Markdown checklist.
+4. **`## Accept` section** — acceptance criteria.
+
+The `## breadcrumb navigation` section is structural metadata and is not shown.
+
+#### Empty / missing states
+
+- **No active session:** Panel shows a placeholder (e.g. *"No active session"*).
+- **Active session but no epic:** Panel shows a placeholder (e.g. *"No epic linked"*).
+- **Active session with epic but vault not configured:** Panel is hidden or shows
+  *"Vault not configured"*.
+- **Opgave file does not exist yet:** File is created automatically when the session
+  starts (see Create Opgave file operation). If creation fails, panel shows a warning.
+- **File exists but sections are empty:** Sections are shown as empty — no placeholder
+  text injected.
+
+#### Update behaviour
+
+The panel refreshes whenever the active session changes (same hook as `refresh_session_panels()`
+in `TimeTrackerApp`). It does not poll or watch the file system — it re-reads the file
+on demand.
+
+#### Write access
+
+The panel is strictly read-only. There is no edit command, no `TextArea`, and no save
+path in this feature. In-app editing is deferred to a future feature.
+
+---
+
+### Writing notes — deferred
+
+Full in-app editing of Opgave sections is explicitly out of scope for this feature.
+It is captured in `## Future Ideas` and will require its own design document when the
+time comes. Key concerns that will need to be addressed then:
+
+- Concurrent-access race with Obsidian (no file lock on Windows).
+- Section boundary parsing robustness.
+- Round-trip fidelity (preserve all content outside the edited section).
+- Command-gated edit mode (explicit unlock, not default).
+- Inline editing in the same panel (not a modal).
+
+---
+
 ## Future Ideas
 
+- **In-app Opgave editing** — command-gated edit mode that turns the read-only panel
+  into an inline `TextArea`. Full section replacement, atomic save, concurrent-access
+  warning. Deferred from this feature intentionally.
 - `opgave open EVD-4325` — launch the file in Obsidian via `obsidian://open` URI.
 - File browser TUI screen for navigating the vault without leaving TimeTracker.
-- Plain-text preview of an Opgave file in a TUI panel.
 - `state` transitions from the TUI (e.g. `opgave done EVD-4325` sets `state: Complete`).
 - Bulk sync: scan all Opgave files in the vault and report out-of-sync breadcrumbs.
 - Epic-level opt-in/out flag for Obsidian sync in the Epic Catalog.
@@ -348,6 +746,40 @@ letting the user opt individual epics in/out at epic-definition time.
 ---
 
 ## Manual Changes
+
+2026-07-29 (revision 6 — OQ 11 & OQ 12 resolved)
+- OQ 11 resolved: hard-code default subfolder names for v1 (`tasks/` and `epics/`
+  under `vault_path`). Configurable paths deferred to a future iteration.
+- Epic file creation: Option A chosen — integration creates an epic file automatically
+  (minimal empty template: just a heading with the epic name) when the first task
+  linked to that epic triggers a sync. A richer template will be designed later.
+- OQ 12 resolved: filename sanitisation uses a replacement map (`dict`). Characters
+  with meaningful substitutions (e.g. `§` → `paragraph`) are replaced; Windows-illegal
+  characters (`/\:*?"<>|`) are removed. The map is stored in code, with a future path
+  to exposing it as a configurable mapping in the Configuration screen.
+- All open questions are now resolved.
+
+2026-07-21 (revision 5 — refinement review)
+- Code audit performed: `epics` table has no `description` column (only `id`, `name`,
+  `created_at`). User confirmed descriptions should live in filesystem files, not DB.
+- `beskrivelse` source changed: populated from the epic `name` field (the group label
+  from `task_catalog` → `epics`), not a non-existent description column.
+- User clarified their epic names: `Valuation principle §14`, `Miscellaneous`,
+  `Mortgage valuation`, `Mainframe Exit`. These are human-readable group labels, not
+  Jira ticket IDs. The session `task` field (typed by user) is the Opgave filename.
+- Filename sanitisation flagged as a new open question (OQ 12) — epic names and task
+  identifiers may contain characters like `§` and spaces.
+- Filter logic confirmed as task-based: `excluded_tasks` / `always_separate_tasks`
+  contain task identifiers (e.g. `Lunch`, `commute`, `Sick`, `Doctor`, `Bank meeting`).
+- Skip condition ordering documented explicitly (vault_path → empty task → excluded →
+  sync).
+- User requested configurable folder paths: task files folder and epic files folder.
+  Two modes proposed: default (subfolders of vault_path) vs. custom (explicit paths).
+  Flagged as new open question (OQ 11).
+- OQ 2 revised: Opgave file named after session task identifier, not epic name.
+- OQ 3 revised: `beskrivelse` from epic `name`, not a description column.
+- OQ 9 revised: clarified that the check is against the session `task` field, and
+  listed concrete examples (`Lunch`, `commute`, `Sick`, `Doctor`, `Bank meeting`).
 
 2026-06-29
 - Feature document created based on user request.
@@ -374,6 +806,28 @@ letting the user opt individual epics in/out at epic-definition time.
 - Epic filter open question raised (not all epics should get Opgave files).
 - Remaining open questions (6–10) identified for Refinement.
 
+2026-07-20 (revision 4)
+- Prerequisites confirmed complete by user (Epic Catalog: Completed, Configuration
+  View: Documented).
+- OQ9 interpretation corrected: excluded_tasks / always_separate_tasks identify tasks
+  WITHOUT epics (administrative). All sessions with a real epic trigger the integration
+  automatically — no user opt-in needed.
+- Panel behaviour clarified: always present in the layout; no user action to show it.
+- Config screen requirement added: vault_path field added to the existing Configuration
+  screen (config command / Ctrl+,), with directory-existence validation.
+- vault_path field is optional — blank disables the integration silently.
+- All remaining open questions (6–10) resolved by user:
+  - OQ 6: PyYAML confirmed for reading; string manipulation for writing uge back.
+  - OQ 7: Atomic writes via os.replace() confirmed.
+  - OQ 8: All three uge update cases on session start confirmed.
+  - OQ 9: Epic filter uses existing excluded_tasks / always_separate_tasks settings.
+    No new setting needed.
+  - OQ 10: Settings key is `vault_path` (kept generic, not Obsidian-specific).
+- Status advanced to Refinement.
+- Requirements and Non-Goals sections written from confirmed decisions.
+- YAML brainstorm note updated to reflect PyYAML decision.
+- Epic filter brainstorm note updated to reflect settings-based approach.
+
 ---
 
 ## Documentation Plan
@@ -384,15 +838,10 @@ _To be defined when the feature reaches Proposed status._
 
 ## Next Step
 
-> **Current status:** Brainstorming
-> **To reach Refinement:** All primary design decisions are resolved. Remaining steps:
+> **Current status:** Refinement
+> **To reach Proposed:** Requirements section has been updated with all resolved
+> decisions. User review needed:
 >
-> 1. Confirm YAML approach (Option B — string manipulation, no new dep).
-> 2. Confirm atomic write pattern is acceptable.
-> 3. Confirm `uge` update behaviour on session start (the three cases described in OQ 8).
-> 4. Decide epic filter strategy (prefix pattern in `settings` vs opt-in flag on Epic
->    Catalog) — OQ 9.
-> 5. Agree on the `settings` key name for the vault path — OQ 10.
-> 6. Write the Requirements and Non-Goals sections from the confirmed decisions.
->
-> The document is ready to move to Refinement once these are addressed.
+> 1. Confirm the Requirements section is complete and accurate.
+> 2. Confirm no requirements have been missed or misrepresented.
+> 3. Once confirmed, advance status to Proposed.

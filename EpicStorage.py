@@ -78,7 +78,12 @@ def link_task_to_epic(task_id: str, epic_id: int) -> None:
 # Epic summary query
 # ---------------------------------------------------------------------------
 
-def get_epic_summary_data(week_num: int, year: int) -> list[tuple]:
+def get_epic_summary_data(
+    week_num: int,
+    year: int,
+    lunch_excluded: bool = True,
+    excluded_tasks: list[str] | None = None,
+) -> list[tuple]:
     """Return session data grouped by day, then Epic, for the target ISO week.
 
     Returns a list of (date_str, epic_name_or_None, task_id, total_minutes) rows.
@@ -88,7 +93,12 @@ def get_epic_summary_data(week_num: int, year: int) -> list[tuple]:
       then None (Misc) last within each day, then tasks alphabetically.
 
     Open sessions (end IS NULL) and sessions with no task are excluded.
+    Sessions matching lunch_excluded / excluded_tasks settings are also excluded
+    so they do not count toward daily totals.
     """
+    if excluded_tasks is None:
+        excluded_tasks = []
+
     # Compute the Monday–Sunday date range for the ISO week.
     # This matches the same week-boundary logic used across the rest of the app.
     jan4 = date(year, 1, 4)
@@ -98,8 +108,24 @@ def get_epic_summary_data(week_num: int, year: int) -> list[tuple]:
     monday_str = monday.strftime("%Y-%m-%d")
     sunday_str = sunday.strftime("%Y-%m-%d")
 
+    # Build dynamic exclusion clause for tasks that should not count.
+    # Lunch is handled via the lunch_excluded flag; additional tasks come from
+    # the excluded_tasks list.
+    exclusions: list[str] = list(excluded_tasks)
+    if lunch_excluded:
+        if "Lunch" not in exclusions:
+            exclusions.append("Lunch")
+
+    # Build the WHERE fragment for excluded tasks.
+    exclude_clause = ""
+    params: list = [monday_str, sunday_str]
+    if exclusions:
+        placeholders = ", ".join("?" for _ in exclusions)
+        exclude_clause = f" AND s.task NOT IN ({placeholders})"
+        params.extend(exclusions)
+
     return repo.fetch_many(
-        """
+        f"""
         SELECT
             s.date AS date_str,
             e.name AS epic_name,
@@ -117,6 +143,7 @@ def get_epic_summary_data(week_num: int, year: int) -> list[tuple]:
           AND s.date >= ?
           AND s.date <= ?
           AND COALESCE(s.task, '') != ''
+          {exclude_clause}
         GROUP BY s.date, e.name, s.task
         ORDER BY
             s.date,
@@ -124,5 +151,5 @@ def get_epic_summary_data(week_num: int, year: int) -> list[tuple]:
             e.name,
             s.task
         """,
-        (monday_str, sunday_str),
+        tuple(params),
     )

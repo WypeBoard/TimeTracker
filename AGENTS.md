@@ -83,7 +83,6 @@ Refinement
 Proposed
 Approved
 Implemented
-Documented
 Completed
 ```
 
@@ -97,7 +96,8 @@ Approved
 The LLM must never begin implementing a feature on its own initiative, even if the status is `Approved`.
 Implementation begins only when the user explicitly requests it in a new session, with a direct reference to the feature document.
 
-When the feature is in `Completed` and has been documented it may be removed. 
+When a feature reaches `Completed` status it must be moved to `features/completed/<feature>.md`.
+It must not be deleted — the completed folder is the permanent archive of finished work.
 
 ---
 
@@ -132,10 +132,7 @@ Example:
 > **To reach Implemented:** User opens a new session and explicitly requests implementation with a reference to this feature document.
 
 > **Current status:** Implemented
-> **To reach Documented:** All files listed in the Documentation Plan are created or updated.
-
-> **Current status:** Documented
-> **To reach Completed:** User confirms the documentation is accurate and the feature is working as described.
+> **To reach Completed:** All files listed in the Documentation Plan are created or updated, then move the feature document to `features/completed/`.
 
 ## Requirements
 
@@ -276,8 +273,7 @@ feature/<feature>.md
 
 rather than user-facing documentation.
 
-When a feature is considered completed.
-It should be moved into feature/completed/<feature>.md
+See the Status Lifecycle section above for archiving rules — completed features are moved to `features/completed/`.
 
 ---
 

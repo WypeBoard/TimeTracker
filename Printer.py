@@ -172,12 +172,27 @@ def build_status_group(
     return Group(*rows)
 
 
-def build_log_week_panel(week_days: dict, week_num: int, year: int) -> Panel:
+def build_log_week_panel(
+    week_days: dict,
+    week_num: int,
+    year: int,
+    lunch_excluded: bool = True,
+    excluded_tasks: list[str] | None = None,
+) -> Panel:
     """Build the Rich Panel for a full week log view.
 
     Extracted so both print_log_week() and the TUI LogScreen can reuse the
     same rendering logic.
+
+    Args:
+        week_days: Dict of date_str → {sessions, total, week} from read_log().
+        week_num: ISO week number.
+        year: ISO year.
+        lunch_excluded: When True, Lunch sessions are excluded from daily totals.
+        excluded_tasks: Task identifiers excluded from daily totals.
     """
+    if excluded_tasks is None:
+        excluded_tasks = []
     jan4 = date(year, 1, 4)
     week1_monday = jan4 - timedelta(days=jan4.weekday())
     monday = week1_monday + timedelta(weeks=week_num - 1)
@@ -204,7 +219,13 @@ def build_log_week_panel(week_days: dict, week_num: int, year: int) -> Panel:
 
         if info:
             sessions = info["sessions"]
-            day_total = info["total"]
+            # Compute the daily total excluding lunch/excluded tasks.
+            day_total = sum(
+                _session_hours(s, e)
+                for s, e, t in sessions
+                if not (lunch_excluded and t == "Lunch")
+                and t not in excluded_tasks
+            )
             week_total += day_total
 
             for j, (start, end, task) in enumerate(sessions):
