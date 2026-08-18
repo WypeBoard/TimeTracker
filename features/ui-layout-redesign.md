@@ -1,6 +1,6 @@
 # Feature: UI Layout Redesign
 
-Status: Refinement
+Status: Proposed
 
 ## Purpose
 
@@ -11,6 +11,11 @@ the current task.
 The existing panels (Today, Week, Task Summary, Progress) are largely four different representations of the same historical session data. This
 redesign removes the duplication and reclaims that screen space for higher-value information: the active session, today's timeline, and (
 eventually) task notes.
+
+## Next Step
+
+> **Current status:** Proposed
+> **To reach Approved:** User reviews and explicitly approves the design.
 
 ---
 
@@ -23,20 +28,98 @@ eventually) task notes.
 
 ## Requirements
 
-*To be refined during brainstorming.*
+### Dashboard layout
 
-- The permanent dashboard is focused on the current moment, not historical aggregates.
-- Weekly / historical data is accessible via an overlay (not permanently visible).
-- The layout is responsive to terminal width within reasonable bounds.
-- Nothing is silently dropped — panels removed from the permanent dashboard must be explicitly accounted for (overlay, merged into another
-  panel, or deliberately cut).
+1. The dashboard comprises five permanent sections arranged vertically:
+   1. A top row with the **Active Session** panel (left, wider) and **Quick Stats** sidebar (right, narrower).
+   2. **Today's Timeline** panel (full-width).
+   3. **Task Notes** panel (full-width, fills remaining vertical space).
+   4. **Output** panel (compact, fixed height).
+   5. A footer with the command input and key hint bar.
+2. The existing `TodayPanel`, `WeekPanel`, `TaskSummaryPanel`, and `ProgressStrip` Textual widget classes are removed from the dashboard and deleted.
+
+---
+
+### Active Session panel
+
+3. **Active state** — the panel displays:
+   - Line 1: `{task_id}  ·  {task_name}` in bold.
+   - Line 2: `Epic: {epic_name}` — omitted entirely if no Epic is assigned to the task.
+   - Line 3: blank separator.
+   - Line 4: `Running  {HH:MM:SS}` (live ticker, updates every second) aligned left; `Started  {HH:MM}` aligned right.
+4. **Idle state with prior sessions today** — the panel displays:
+   - "No active session" in dimmed/muted style.
+   - A second line: `Last ended  {HH:MM}  ({task_id})` showing the most recent closed session's end time and task ID.
+5. **Idle state with no sessions today** — the panel displays only "No active session" in dimmed/muted style.
+
+---
+
+### Quick Stats sidebar
+
+6. The sidebar shows five labelled values in order:
+   - `Today` — hours logged today / daily target (e.g. `5.8h/7.4h`).
+   - `Rem.` — remaining hours to reach the daily target.
+   - `Leave` — projected leave time, using the same calculation as the current Today panel.
+   - `Week` — total hours logged for the current ISO week (Mon–Sun).
+   - `Sessions` — count of sessions recorded today.
+7. No Epic information is shown in the sidebar.
+
+---
+
+### Today's Timeline panel
+
+8. Each session today occupies one row with the following columns (left to right): 1-based index (`#N`), start time (`HH:MM`), separator (`–`), end time (`HH:MM`) or `Now` for the active session, task ID, task name, right-aligned duration (`N.Nh`), and an active indicator (`▶`) for the active session (blank for closed sessions).
+9. The active session row is visually highlighted (bold or accent colour); closed rows are normal weight.
+10. The panel has a fixed visible height of approximately 5–6 rows and scrolls internally when the session count exceeds that height. The active session row is always scrolled into view.
+11. When no sessions exist today, the panel displays: "No sessions recorded today."
+
+---
+
+### Task Notes panel
+
+12. The Task Notes panel is a non-interactive static placeholder. It displays two lines of dimmed/muted text:
+    - "Notes for the active task will appear here."
+    - "(Obsidian integration — not yet implemented)"
+13. The panel uses `height: 1fr` in Textual CSS so it fills all remaining vertical space after the fixed-height panels have been allocated.
+
+---
+
+### Output panel
+
+14. The Output panel shows the three most recent command results in a fixed-height display. It is not scrollable from the dashboard.
+15. Error messages are styled red/bold. Success messages are normal weight or green.
+
+---
+
+### Weekly Overview overlay
+
+16. A new `WeeklyOverviewScreen` (`ModalScreen`, 90% × 90%) replaces both `LogScreen` and `EpicSummaryScreen`. Both existing classes are deleted.
+17. The overlay is opened with the `[w]` key binding from the dashboard. The existing `[l]` (Log) and `[e]` (Epic Summary) key bindings are removed.
+18. The overlay displays time grouped hierarchically: **day → Epic → task**, with a `(Misc)` group for tasks that have no Epic assignment (consistent with the current `EpicSummaryScreen`).
+19. Every row — day header, Epic subtotal, and task row — shows two duration columns side by side:
+    - Left column: `HH:MM` (60-based, actual hours and minutes).
+    - Right column: decimal hundredths of an hour (100-based; no `h` suffix to visually distinguish from the left column).
+20. A "Week total" row at the bottom carries both duration columns.
+21. The overlay header shows the title "Weekly Overview" and a right-aligned week indicator in the format `◄  Week NN/YYYY  ►`.
+22. `←` / `→` navigate by one ISO week (backwards / forwards). Forward navigation is capped at the current week.
+23. `[esc]` closes the overlay and returns to the dashboard.
+24. The `_max_week_of_year` helper function exists once (inside `WeeklyOverviewScreen`) and is not duplicated.
+
+---
+
+### Key bindings footer
+
+25. The dashboard footer key hint bar displays: `[w] Weekly Overview   [ctrl+q] Quit`.
 
 ## Non-Goals
 
-- New data or functionality is not introduced by this feature — it is a layout and content-organisation change.
-- Obsidian / notes integration is a future feature. The Task Notes panel is a placeholder in the design to reserve the space; it will not be
-  wired up as part of this feature.
-- Command changes are covered by `features/command-redesign.md`.
+- **No new data or commands.** This feature is a layout and content-organisation change only. No new storage tables, no new application commands, and no changes to existing command behaviour.
+- **Task Notes panel is a placeholder only.** The panel renders static text. It is not wired to any data source. Obsidian integration is a separate future feature.
+- **No Tasks pivot overlay.** The day × task summary (current `TaskSummaryPanel`) is removed and not replaced with an equivalent overlay. Resolved as cut (open question 10).
+- **No raw session-row log overlay.** The individual-session format of the current `LogScreen` is not carried over. Resolved as cut (open question 12).
+- **`ConfigScreen` and `EpicModal` are unchanged.** These overlays serve distinct purposes and are out of scope.
+- **Command changes are out of scope.** Covered by `features/command-redesign.md`.
+- **No responsive layout engineering.** The layout is expected to render correctly at a reasonable terminal width (≥ 80 columns). No explicit handling of very narrow or very wide terminals is required.
 
 ## Manual Changes
 
@@ -52,11 +135,19 @@ eventually) task notes.
   stats sidebar. Historical aggregate panels (Week, Task Summary, Progress bars) move to an overlay.
 - All prior brainstorm decisions before 2026-08-17 are superseded.
 
+### 2026-08-18
+
+- All open questions (1–12) resolved through design review session.
+- Requirements section filled from resolved design; status advanced to Proposed.
+- Tasks pivot overlay (Q10), separate Epics overlay (Q11), and raw session-log overlay (Q12) all cut — `[w]` opens a single Weekly Overview overlay in Epic Summary format with dual duration columns.
+- `LogScreen` and `EpicSummaryScreen` confirmed for deletion; replaced by `WeeklyOverviewScreen`.
+
 ## Documentation Plan
 
-| File          | Action | Description                                                                                                  |
-|---------------|--------|--------------------------------------------------------------------------------------------------------------|
-| `docs/tui.md` | Update | Replace Layout section ASCII art and Panels descriptions to reflect the new cockpit layout and overlay model |
+| File               | Action | Description                                                                                                                                  |
+|--------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| `docs/tui.md`      | Update | Replace the Layout section ASCII art and Panels descriptions to reflect the new cockpit layout, new panel behaviours, and the overlay model  |
+| `docs/commands.md` | Update | Remove the `[l]` Log and `[e]` Epic Summary key binding references; add the `[w]` Weekly Overview key binding                               |
 
 ## Brainstorm Notes
 
