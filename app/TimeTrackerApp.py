@@ -1,26 +1,28 @@
 """TimeTrackerApp — root Textual application.
 
-Layout:
-  ┌─ Header ──────────────────────────────────────────────┐
-  │  ┌─ Today ─────────────────┐  ┌─ Week ──────────────┐ │
-  │  │  sessions + leave time  │  │  promark-style rows │ │
-  │  └─────────────────────────┘  └────────────────────┘ │
-  │  ┌─ Task Summary ─────────────────────────────────────┐│
-  │  │  Day × Task → Hours pivot for the current week    ││
-  │  └───────────────────────────────────────────────────┘│
-  │  ┌─ Progress ─────────────────────────────────────────┐│
-  │  │  Today H:MM / H:MM [bar] ZZ%                      ││
-  │  │  Week  H:MM / H:MM [bar] ZZ%                      ││
-  │  └───────────────────────────────────────────────────┘│
-  │  ┌─ Output ───────────────────────────────────────────┐│
-  │  │  command feedback (scrollable)                    ││
-  │  └───────────────────────────────────────────────────┘│
-  │  > command input                                       │
-  └─ Footer ──────────────────────────────────────────────┘
+Cockpit layout (see feature `ui-layout-redesign.md`):
+
+  ┌─ Header ────────────────────────────────────────────────────┐
+  │  ┌─ Active Session ───────────────┐  ┌─ Quick Stats ─────┐ │
+  │  │  task id / epic / running time │  │  today / rem /    │ │
+  │  │                                │  │  leave / week /   │ │
+  │  │                                │  │  sessions         │ │
+  │  └────────────────────────────────┘  └───────────────────┘ │
+  │  ┌─ Today's Timeline ────────────────────────────────────┐ │
+  │  │  #N  HH:MM – HH:MM  TASK  N.Nh  ▶                     │ │
+  │  └───────────────────────────────────────────────────────┘ │
+  │  ┌─ Task Notes ──────────────────────────────────────────┐ │
+  │  │  Obsidian integration placeholder                     │ │
+  │  └───────────────────────────────────────────────────────┘ │
+  │  ┌─ Output ──────────────────────────────────────────────┐ │
+  │  │  last 3 command results                               │ │
+  │  └───────────────────────────────────────────────────────┘ │
+  │  > command input                                             │
+  └─ Footer ─────────────────────────────────────────────────────┘
 
 Keybindings:
   ctrl+q   quit
-  l        open LogScreen overlay (week session detail)
+  w        open WeeklyOverviewScreen overlay
   Tab      cycle focus
 """
 from datetime import date
@@ -30,13 +32,13 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header
 
+from app.ActiveSessionPanel import ActiveSessionPanel
 from app.CommandInput import CommandInput
 from app.OutputPanel import OutputPanel
-from app.ProgressStrip import ProgressStrip
-from app.TaskSummaryPanel import TaskSummaryPanel
-from app.TodayPanel import TodayPanel
+from app.QuickStatsPanel import QuickStatsPanel
+from app.TaskNotesPanel import TaskNotesPanel
+from app.TodaysTimelinePanel import TodaysTimelinePanel
 from app.TuiAppContext import TuiAppContext
-from app.WeekPanel import WeekPanel
 
 
 class TimeTrackerApp(App):
@@ -47,7 +49,7 @@ class TimeTrackerApp(App):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
-        Binding("l", "show_log", "Log"),
+        Binding("w", "show_weekly", "Weekly Overview"),
     ]
 
     DEFAULT_CSS = """
@@ -56,30 +58,35 @@ class TimeTrackerApp(App):
         layout: vertical;
     }
 
-    #panel-row {
-        height: 1fr;
+    /* Fixed top-row height so both panels align to the same bottom edge
+       regardless of how many content lines each one renders (Active Session
+       renders 3–4 lines depending on Epic assignment; Quick Stats always
+       renders 5). Height = 5 content lines + 2 border lines = 7. */
+    #top-row {
+        height: 7;
         width: 1fr;
     }
 
-    TodayPanel {
+    ActiveSessionPanel {
         width: 3fr;
+        height: 100%;
     }
 
-    WeekPanel {
-        width: 2fr;
-        margin-left: 1;
+    QuickStatsPanel {
+        width: 1fr;
+        height: 100%;
     }
 
-    TaskSummaryPanel {
-        height: auto;
+    TodaysTimelinePanel {
+        height: 8;
     }
 
-    ProgressStrip {
-        height: auto;
+    TaskNotesPanel {
+        height: 1fr;
     }
 
     OutputPanel {
-        height: 8;
+        height: 5;
         margin-top: 1;
     }
 
@@ -90,11 +97,11 @@ class TimeTrackerApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Horizontal(id="panel-row"):
-            yield TodayPanel(id="today")
-            yield WeekPanel(id="week")
-        yield TaskSummaryPanel(id="task-summary")
-        yield ProgressStrip(id="progress")
+        with Horizontal(id="top-row"):
+            yield ActiveSessionPanel(id="active-session")
+            yield QuickStatsPanel(id="quick-stats")
+        yield TodaysTimelinePanel(id="timeline")
+        yield TaskNotesPanel(id="notes")
         yield OutputPanel(id="output")
         yield CommandInput(id="cmd")
         yield Footer()
@@ -105,29 +112,28 @@ class TimeTrackerApp(App):
         self.query_one(CommandInput)._ctx = ctx
 
         # Initial data load for all data-driven panels.
-        self.query_one(TodayPanel).refresh_data()
-        self.query_one(WeekPanel).refresh_data()
-        self.query_one(TaskSummaryPanel).refresh_data()
-        self.query_one(ProgressStrip).refresh_data()
+        self.query_one(ActiveSessionPanel).refresh_data()
+        self.query_one(QuickStatsPanel).refresh_data()
+        self.query_one(TodaysTimelinePanel).refresh_data()
 
         # Focus the command input on startup so the user can type immediately.
         self.query_one(CommandInput).focus()
 
     def refresh_session_panels(self) -> None:
-        """Refresh all data-driven panels.
+        """Refresh all data-driven cockpit panels.
 
         Called by TuiAppContext.on_session_changed() after any mutating command.
+        TaskNotesPanel is static — no data source, no refresh.
         """
-        self.query_one(TodayPanel).refresh_data()
-        self.query_one(WeekPanel).refresh_data()
-        self.query_one(TaskSummaryPanel).refresh_data()
-        self.query_one(ProgressStrip).refresh_data()
+        self.query_one(ActiveSessionPanel).refresh_data()
+        self.query_one(QuickStatsPanel).refresh_data()
+        self.query_one(TodaysTimelinePanel).refresh_data()
 
-    def action_show_log(self) -> None:
-        """Open the week log overlay for full session-by-session detail."""
-        from app.LogScreen import LogScreen
+    def action_show_weekly(self) -> None:
+        """Open the Weekly Overview overlay for the current ISO week."""
+        from app.WeeklyOverviewScreen import WeeklyOverviewScreen
         today_iso = date.today().isocalendar()
-        self.push_screen(LogScreen(today_iso.week, today_iso.year))
+        self.push_screen(WeeklyOverviewScreen(today_iso.week, today_iso.year))
 
     def action_show_config(self) -> None:
         """Open the configuration screen."""

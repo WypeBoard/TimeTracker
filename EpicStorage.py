@@ -92,8 +92,14 @@ def get_epic_summary_data(
     - Rows are sorted: by date, then named Epics alphabetically within each day,
       then None (Misc) last within each day, then tasks alphabetically.
 
-    Open sessions (end IS NULL) and sessions with no task are excluded.
-    Sessions matching lunch_excluded / excluded_tasks settings are also excluded
+    Open sessions (end IS NULL) are excluded because they have no end time.
+    Sessions with no task label are **included** — they surface under the
+    virtual ``(Misc)`` group with an empty ``task_id`` string, which the
+    printer renders as ``(no task)``. Hiding them here was a bug: it made
+    untagged work invisible in the Weekly Overview even though those minutes
+    were part of the day.
+
+    Sessions matching lunch_excluded / excluded_tasks settings are excluded
     so they do not count toward daily totals.
     """
     if excluded_tasks is None:
@@ -142,7 +148,6 @@ def get_epic_summary_data(
         WHERE s.end IS NOT NULL
           AND s.date >= ?
           AND s.date <= ?
-          AND COALESCE(s.task, '') != ''
           {exclude_clause}
         GROUP BY s.date, e.name, s.task
         ORDER BY

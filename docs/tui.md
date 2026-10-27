@@ -20,125 +20,103 @@ CLI mode — all commands are entered from within the running application.
 ```
 ┌─ TimeTracker ───────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  ┌─ Today: 2026-06-22 ────────────────────┐  ┌─ Week 26 ─────────────────┐ │
-│  │  #  Start  End      Hours  Task        │  │  2026-06-16  Mon  07:30→17:00  7:30 │ │
-│  │  #1  07:30  11:20   3:50h  Epic-42     │  │  2026-06-17  Tue  08:00→15:45  7:15 │ │
-│  │  #2  11:50  now ▶   2:10h  Epic-42     │  │  2026-06-18  Wed  —             │ │
-│  │                                        │  │  2026-06-19  Thu  08:30→now ▶  4:00 │ │
-│  │  ⏳ Remaining 1:30   🚪 Leave ~16:15   │  │  2026-06-20  Fri  —             │ │
-│  └────────────────────────────────────────┘  └───────────────────────────────┘ │
-│                                                                             │
-│  ┌─ Task Summary — Week 26 ────────────────────────────────────────────────┐ │
-│  │  Mon   Epic-42   7:30                                                   │ │
-│  │  Tue   Epic-42   4:00                                                   │ │
-│  │        Epic-55   3:15                                                   │ │
-│  │  Wed   —                                                                │ │
-│  │  Thu   Epic-42   3:30 ▶                                                 │ │
-│  │  Fri   —                                                                │ │
-│  └─────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│  ┌─ Progress ──────────────────────────────────────────────────────────────┐ │
-│  │  Today   6:00 / 7:24   ████████████████░░░░░░░░  81%                   │ │
-│  │  Week   32:30 / 29:36  ██████████████████████    110%                  │ │
-│  └─────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│  ┌─ Output ────────────────────────────────────────────────────────────────┐ │
-│  │  ▶  Started #2 — 11:50  Epic-42  (carried forward)                     │ │
-│  └─────────────────────────────────────────────────────────────────────────┘ │
+│  ┌─ Active Session ───────────────────────────┐  ┌─ Quick Stats ──────┐    │
+│  │  TASK-4321                                 │  │  Today    5.8h/7.4h│    │
+│  │  Epic: Platform Ops                        │  │  Rem.     1.6h     │    │
+│  │                                            │  │  Leave   ~15:42    │    │
+│  │  Running  02:37:14   Started  09:00        │  │  Week    31.2h     │    │
+│  └────────────────────────────────────────────┘  │  Sessions 3        │    │
+│                                                   └────────────────────┘    │
+│  ┌─ Today's Timeline ─────────────────────────────────────────────────────┐│
+│  │  #1  07:00 – 08:30  TASK-1111  1.5h                                   ││
+│  │  #2  08:30 – 09:00  TASK-2222  0.5h                                   ││
+│  │  #3  09:00 – Now    TASK-4321  2.6h  ▶                                ││
+│  └────────────────────────────────────────────────────────────────────────┘│
+│  ┌─ Task Notes ───────────────────────────────────────────────────────────┐│
+│  │  Notes for the active task will appear here.                          ││
+│  │  (Obsidian integration — not yet implemented)                         ││
+│  └────────────────────────────────────────────────────────────────────────┘│
+│  ┌─ Output ───────────────────────────────────────────────────────────────┐│
+│  │  ✓ Session started: TASK-4321 at 09:00                                ││
+│  │  ✓ Previous session closed: TASK-1234 (1.50h)                         ││
+│  └────────────────────────────────────────────────────────────────────────┘│
 │  > type a command…                                                          │
-│  [l] Log  [ctrl+q] Quit                                                     │
+│  [w] Weekly Overview  [ctrl+q] Quit                                         │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Vertical order: Today + Week → Task Summary → Progress → Output → Command input → Footer.
+Vertical order: Active Session + Quick Stats (top row) → Today's Timeline →
+Task Notes → Output → Command input → Footer. The Task Notes panel uses
+`height: 1fr` and fills all remaining vertical space between the fixed-height
+panels.
 
 ---
 
 ## Panels
 
-### Today panel (left, top row)
+### Active Session panel (top-left)
 
-Shows today's completed sessions plus the active session (if any) marked
-`now ▶`, and an estimated leave time (when a session is active).
+Displays the currently running session and its context.
 
-The progress bar has been moved to the **Progress** strip below — the Today
-panel now shows only the session table and leave-time line.
+- **Active state** — bold task ID on the first line; `Epic: <name>` on the
+  second line (omitted when the task has no Epic link); a live running-time
+  counter in `HH:MM:SS` format alongside the session start time. The
+  counter ticks once per second.
+- **Idle with prior sessions today** — dimmed "No active session" plus a
+  `Last ended HH:MM (TASK-ID)` line referencing the most recently closed
+  session.
+- **Idle, empty day** — dimmed "No active session" only.
 
-Auto-refreshes every 60 seconds while a session is running.
+Sessions do not store a separate task-name field, so the ID doubles as the
+label.
 
-### Week panel (right, top row)
+### Quick Stats sidebar (top-right)
 
-Displays Mon–Fri for the current ISO week in promark style:
+Five compact metrics:
 
-```
-2026-06-16  Mon  07:30 → 17:00  7:30
-2026-06-17  Tue  08:00 → 15:45  7:15
-2026-06-18  Wed  —
-2026-06-19  Thu  08:30 → now ▶  4:00
-2026-06-20  Fri  —
-```
+- `Today` — logged hours / configured daily target (decimal, e.g. `5.8h/7.4h`).
+- `Rem.` — remaining hours today / remaining hours for the current ISO week
+  (e.g. `1.6h/2.8h`). The weekly remainder is the weekly target (see `Week`
+  below) minus the week total so far. Both values are clamped to zero once
+  their respective targets are reached.
+- `Leave` — projected leave time (same algorithm as the CLI status panel).
+  Renders as `—` when no session is active or the target is already reached.
+- `Week` — total hours logged for the current ISO week (Mon–Sun) followed by
+  the weekly target (`logged/target`). The target is
+  `daily_target × number_of_days_with_registration_this_week` — e.g. on a
+  Wednesday with three registered days the target is `3 × 7.4h = 22.2h`.
+  Weekend sessions are included in both figures.
+- `Sessions` — count of sessions recorded today (closed + active).
 
-- Each row: `Date  Day  HH:MM → HH:MM  Xh`.
-- Promark end = `first_start + total_hours + 30 min lunch` (same algorithm as
-  the `promark` command).
-- Today's row shows `now ▶` for the end time when a session is active.
-- Days with no sessions show `Date  Day  —`.
-- All hours in base-60 clock format (`H:MM`).
-- Refreshes every 60 seconds and after every mutating command.
+Refreshes every 60 seconds and after every mutating command.
 
-### Task Summary panel (full width, below top row)
+### Today's Timeline panel (full width)
 
-Pivot view of which tasks were worked on each weekday and the aggregated hours:
+Chronological list of today's sessions with a fixed visible height of ~5–6
+rows. Longer days scroll internally; the active session is scrolled into
+view automatically.
 
-```
-Mon   Epic-42   7:30
-Tue   Epic-42   4:00
-      Epic-55   3:15
-Wed   —
-Thu   Epic-42   3:30 ▶
-Fri   —
-```
+Columns per row: `#N`, start `HH:MM`, separator `–`, end `HH:MM` (or `Now`
+for the active session), task ID, right-aligned duration in decimal hours
+(`N.Nh`), and a `▶` marker on the active row. The active row is styled
+bold green; closed rows are normal weight.
 
-- One row per (day, task) combination. The day name appears only on the first
-  task row; continuation rows have a blank day cell.
-- Tasks are aggregated across sessions — three sessions tagged `Epic-42`
-  become one row.
-- Sessions with no task label are shown as `(no task)`.
-- The `▶` marker appears on the task row that includes the currently active
-  session. If the active session shares a task with completed sessions, their
-  hours are merged and the combined row carries the marker.
-- Days with no sessions show `Day  —`.
-- Hours in base-60 clock format (`H:MM`).
-- Border title: `Task Summary — Week N`.
-- Refreshes every 60 seconds and after every mutating command.
+Empty state: `No sessions recorded today.`
 
-### Progress strip (full width, below Task Summary)
+Refreshes every 60 seconds and after every mutating command.
 
-Two stacked progress bars:
+### Task Notes panel (full width)
 
-```
-Today   6:00 / 7:24   ████████████████░░░░░░░░  81%
-Week   32:30 / 29:36  ██████████████████████    110%
-```
-
-- **Today** row: logged hours vs. the configured daily target (default 7.4 h).
-  Hours are computed after applying the `lunch_excluded` and `excluded_tasks`
-  settings — excluded sessions do not count toward this total.
-- **Week** row: this week's total hours vs. the *dynamic week target*
-  (`target_hours_per_day × number of weekdays with at least one non-excluded
-  session`). This gives a meaningful signal on Monday instead of always
-  showing ~20%.
-- Edge case — no sessions yet this week: the Week row renders `0:00 / —`
-  (dim, no bar) so the layout does not shift when the first session starts.
-- Bars are green when the target is met; yellow otherwise.
-- All times in base-60 clock format (`H:MM`).
-- Refreshes every 60 seconds and after every mutating command.
+Static placeholder for future Obsidian note integration. Renders two
+dimmed lines and does not read any data source. Uses `height: 1fr` so it
+expands to fill all remaining vertical space.
 
 ### Output panel
 
-Scrollable log of confirmation and error messages from mutation commands
-(`start`, `stop`, `pause`, `resume`, `task`). The `status` command does not
-write here — it refreshes the Today panel directly.
+Compact fixed-height display (approximately 3 message lines) showing the
+most recent command results. Error messages are red/bold; success messages
+are normal or green. Not scrollable from the dashboard — full week history
+is accessed via the Weekly Overview overlay (`[w]`).
 
 ---
 
@@ -155,12 +133,12 @@ reference including syntax, arguments, and output examples.
 | `stop [hhmm]` | Closes session; all panels refresh |
 | `resume [hhmm]` | Close + reopen, carrying epic; shows Task–Epic modal if carried task is new |
 | `task <epic> [-s N]` | Tags session; confirmation in Output; shows Task–Epic modal if task is new |
-| `status` | Refreshes Today panel immediately (no Output message) |
-| `log [wNN]` | Opens the Log overlay |
+| `status` | Refreshes the cockpit panels immediately (no Output message) |
+| `log [wNN]` | Opens the Weekly Overview overlay |
 | `promark [wNN]` | Writes the Promark table to Output (applies configured settings) |
 | `epic add <name>` | Creates a new Epic; confirmation in Output |
 | `epic list` | Lists all Epics alphabetically in Output |
-| `epic summary [wNN]` | Opens the Epic Summary overlay |
+| `epic summary [wNN]` | Opens the Weekly Overview overlay |
 | `config` | Opens the Configuration screen |
 
 ---
@@ -190,29 +168,8 @@ See `docs/configuration.md` for the full reference.
 
 ## Log Overlay
 
-Typing `log` (or pressing `l`) pushes a full-screen overlay showing every
-session for the week with task labels, daily totals, and a week total.
-
-```
-┌─ Week 26 — Jun 16–20, 2026 ──────────────────────────────────────────────┐
-│                                                                           │
-│    Mon  #1  08:30–12:00  3.50h  Epic-42                                  │
-│         #2  12:30–16:30  4.00h  Epic-42                                  │
-│             daily total  7.50h                                            │
-│    Tue  #1  08:45–16:30  7.25h  Epic-55                                  │
-│    Wed  —                                                                 │
-│    Thu  #1  07:30 → now ▶  ...                                            │
-│    Fri  —                                                                 │
-│                                                                           │
-│    Week total:  ...                                                       │
-│                                                                           │
-│  [Esc] close   [←] prev week   [→] next week                             │
-└───────────────────────────────────────────────────────────────────────────┘
-```
-
-Navigation:
-- `←` / `→` — browse between weeks (forward navigation is capped at the current week).
-- `Esc` — close the overlay and return to the dashboard.
+Superseded by the [Weekly Overview overlay](#weekly-overview-overlay). The
+typed `log` command and the `[w]` key binding both open the same overlay.
 
 ---
 
@@ -262,38 +219,63 @@ most once per task — after a link is written it does not reappear.
 
 ---
 
-## Epic Summary Overlay
+## Weekly Overview overlay
 
-Opened by `epic summary [wNN]`. Shows time grouped by **day first**, then by
-Epic within each day. Navigation matches the Log overlay.
+Opened with the `[w]` key binding, or by typing `log`, `epic summary`, or
+`epic summary wNN` in the command bar. All three routes open the same modal.
+The overlay shows time grouped **day → Epic → task** for one ISO week, with
+two duration columns on every row so both time-registration formats can be
+read off directly.
 
 ```
-┌─ 📊  Epic Summary — Week 26  (Jun 16 – Jun 20) ──────────────────────────┐
-│                                                                            │
-│  Monday Jun 16                                     12:30                  │
-│    Platform Team                                   10:00                  │
-│      TASK-123                                       7:30                  │
-│      TASK-456                                       2:30                  │
-│    (Misc)                                           2:30                  │
-│      TASK-789                                       2:30                  │
-│  Tuesday Jun 17                                     4:15                  │
-│    Platform Team                                    4:15                  │
-│      TASK-123                                       4:15                  │
-│                                                                            │
-│  Week total:  16:45                                                        │
-│                                                                            │
-│  [Esc] close   [←] prev week   [→] next week                              │
-└────────────────────────────────────────────────────────────────────────────┘
+╔═ Weekly Overview  (Jun 16 – Jun 22)    ◄  Week 26/2026  ► ═══════════════╗
+║                                                    HH:MM   Decimal        ║
+║                                                                            ║
+║   Monday Jun 16    07:00 → 11:00                    4:00     4.00         ║
+║     Platform Team                                   2:30     2.50         ║
+║       TASK-123                                      2:30     2.50         ║
+║     (Misc)                                          1:30     1.50         ║
+║       TASK-789                                      1:00     1.00         ║
+║       (no task)                                     0:30     0.50         ║
+║                                                                            ║
+║   Tuesday Jun 17   08:00 → 10:00                    2:00     2.00         ║
+║     Platform Team                                   2:00     2.00         ║
+║       TASK-123                                      2:00     2.00         ║
+║                                                                            ║
+║   Week total                                        6:00     6.00         ║
+║                                                                            ║
+║   [Esc] close   [←] prev week   [→] next week                             ║
+╚════════════════════════════════════════════════════════════════════════════╝
 ```
 
-- Each day is a bold header line with the daily total.
-- Epics are indented under their day with a per-day Epic total.
-- Tasks are double-indented under their Epic with per-day task totals.
-- Tasks with no `task_catalog` entry are grouped under `(Misc)` within that day.
-- `(Misc)` is a virtual group — it is not stored and does not appear in
-  `epic list`.
-- Hours in base-60 clock format (`H:MM`).
-- `←` / `→` navigate weeks; `Esc` closes.
+- Day header rows, Epic subtotals, and task rows all carry both duration
+  columns. Left column is base-60 clock (`HH:MM`); right column is decimal
+  hundredths of an hour (no `h` suffix, so the two columns are easy to tell
+  apart at a glance).
+- Each day header shows a **Promark-style consolidated span**
+  (`first_start → first_start + worked_time`) beside the day label. This is
+  the same span the `promark` command emits, so the boundary a
+  registration system expects can be read directly off the overlay. Days
+  with no closed sessions omit the span. The span honours the same
+  configuration as `promark`: always-separate tasks are excluded from the
+  span, Lunch is excluded when the setting is on, and any Promark offset is
+  applied to the end time.
+- Tasks with no `task_catalog` entry are grouped under `(Misc)` within
+  their day. `(Misc)` is a virtual group — it is not stored and does not
+  appear in `epic list`.
+- Sessions that were never tagged with a task label are also included and
+  appear under `(Misc)` with the placeholder label `(no task)`. Untagged
+  time is not hidden.
+- The week indicator `◄  Week NN/YYYY  ►` is right-aligned in the panel
+  title.
+- `←` / `→` navigate weeks; forward navigation is capped at the current
+  ISO week (future weeks cannot be viewed).
+- `Esc` closes the overlay and returns to the dashboard.
+
+The previous separate `LogScreen` (individual session rows) and
+`EpicSummaryScreen` (Epic totals in `HH:MM` only) have been replaced by
+this single overlay — see the completed feature
+`features/completed/ui-layout-redesign.md`.
 
 ---
 
@@ -305,10 +287,10 @@ Epic within each day. Navigation matches the Log overlay.
 | `↑` / `↓` | Browse command history (within the session) |
 | `Esc` | Clear command input (or close overlay / cancel add-input) |
 | `Tab` / `Shift+Tab` | Cycle focus between panels |
-| `l` | Open the Log overlay for the current week |
+| `w` | Open the Weekly Overview overlay for the current week |
 | `ctrl+,` | Open the Configuration screen |
 | `ctrl+q` | Quit the TUI |
-| `←` / `→` (in Log / Epic Summary overlay) | Navigate between weeks |
+| `←` / `→` (in Weekly Overview overlay) | Navigate between weeks |
 | `↑` / `↓` (in Task–Epic modal) | Navigate the Epic list |
 | `Enter` (in Task–Epic modal) | Select Epic or confirm new name |
 | `Esc` (in Task–Epic modal State 1) | Skip linking (save as Misc) |
@@ -320,13 +302,21 @@ Epic within each day. Navigation matches the Log overlay.
 
 ## Auto-Refresh
 
-The Today panel, Task Summary panel, and Progress strip refresh automatically
-every **60 seconds** while the TUI is running. This keeps the `active_hours`
-counter, the task pivot, and the progress bars current without any user action.
+The Active Session panel ticks **once per second** so the running-time
+counter stays current without user action.
 
-The Week panel also runs a 60-second timer so its running total stays current.
+The Quick Stats sidebar and Today's Timeline panel refresh every
+**60 seconds** — the counters and totals they display do not need sub-minute
+precision.
 
-The Output panel does not use a timer — it updates only in response to commands.
+All three data-driven panels also refresh immediately after every mutating
+command (via `TuiAppContext.on_session_changed()`).
+
+The Task Notes panel is a static placeholder — it has no data source and
+never refreshes.
+
+The Output panel does not use a timer — it updates only in response to
+commands.
 
 ---
 
@@ -335,21 +325,22 @@ The Output panel does not use a timer — it updates only in response to command
 - Mouse support is not implemented (keyboard only).
 - Command history is session-scoped — it is not persisted to disk.
 - The `?` help keybinding is not yet implemented.
-- The `status` command refreshes the Today panel but does not write to Output.
-- Week navigation in the Log overlay is capped at the current week; future
-  weeks cannot be viewed.
-- The Task Summary panel does not scroll. If a week has an unusually large
-  number of task/day combinations the content will overflow the widget boundary.
-- The dynamic week target in the Progress strip counts any weekday with at
-  least one session. No adjustment is made for vacation days or public holidays.
+- The `status` command refreshes the cockpit panels but does not write to Output.
+- Week navigation in the Weekly Overview overlay is capped at the current
+  week; future weeks cannot be viewed.
+- The Task Notes panel is a static placeholder — the Obsidian integration
+  is a separate future feature.
+- Sessions do not store a task-name field; the Active Session panel and
+  Today's Timeline show the task ID only, not a separate task name.
 
 ---
 
 ## Related Features
 
 - `features/textual.md` — original Textual TUI design document.
-- `features/tui-dashboard-enhancements.md` — design document for the dashboard
-  enhancements (WeekPanel redesign, TaskSummaryPanel, ProgressStrip).
+- `features/completed/ui-layout-redesign.md` — cockpit layout, Weekly
+  Overview overlay, and removal of the older Today / Week / Task Summary /
+  Progress panels.
 - `docs/commands.md` — full command reference.
 - `docs/epic-catalog.md` — Epic Catalog: managing Epics, task–Epic linking, and the modal.
 - `docs/configuration.md` — configuration screen: settings and their effects.

@@ -1,6 +1,6 @@
 # Feature: UI Layout Redesign
 
-Status: Proposed
+Status: Approved
 
 ## Purpose
 
@@ -14,8 +14,9 @@ eventually) task notes.
 
 ## Next Step
 
-> **Current status:** Proposed
-> **To reach Approved:** User reviews and explicitly approves the design.
+> **Current status:** Completed
+> Feature shipped — implementation and documentation are in sync.
+> This document has been archived under `features/completed/`.
 
 ---
 
@@ -141,6 +142,27 @@ eventually) task notes.
 - Requirements section filled from resolved design; status advanced to Proposed.
 - Tasks pivot overlay (Q10), separate Epics overlay (Q11), and raw session-log overlay (Q12) all cut — `[w]` opens a single Weekly Overview overlay in Epic Summary format with dual duration columns.
 - `LogScreen` and `EpicSummaryScreen` confirmed for deletion; replaced by `WeeklyOverviewScreen`.
+
+### 2026-08-18 (later)
+
+- User approved the design; status advanced to Approved.
+- Implementation shipped in the same session:
+  - Deleted `app/TodayPanel.py`, `app/WeekPanel.py`, `app/TaskSummaryPanel.py`,
+    `app/ProgressStrip.py`, `app/LogScreen.py`, `app/EpicSummaryScreen.py`.
+  - Added `app/ActiveSessionPanel.py`, `app/QuickStatsPanel.py`,
+    `app/TodaysTimelinePanel.py`, `app/TaskNotesPanel.py`,
+    `app/WeeklyOverviewScreen.py`.
+  - Rewrote `app/TimeTrackerApp.py` for the cockpit layout and replaced
+    `[l] Log` with `[w] Weekly Overview`.
+  - Added `Printer.build_weekly_overview_panel` (dual `HH:MM` + decimal columns).
+  - Repointed `TuiAppContext.show_log` and `show_epic_summary` at the new
+    Weekly Overview overlay so the typed `log` and `epic summary` commands
+    still work.
+  - Updated `docs/tui.md` and `docs/commands.md` to match.
+- Deviation from spec §3: sessions do not store a separate task-name field,
+  so the Active Session panel's `{task_id} · {task_name}` line renders as
+  the task ID alone. Documented in `docs/tui.md`.
+- Status advanced to Completed; feature document moved to `features/completed/`.
 
 ## Documentation Plan
 

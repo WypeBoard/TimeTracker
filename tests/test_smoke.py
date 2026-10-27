@@ -582,8 +582,14 @@ def test_epic_summary_empty_week(db):
     assert year == today_iso.year
 
 
-def test_epic_summary_excludes_sessions_without_task(db):
-    """Sessions with no task label are not included in the epic summary."""
+def test_epic_summary_includes_sessions_without_task(db):
+    """Sessions with no task label are included and grouped under (Misc).
+
+    Previously these were filtered out at the SQL level, which made
+    untagged work invisible in the Weekly Overview even though those
+    minutes had actually been tracked. The fix keeps them in the result
+    with an empty ``task_id`` — the printer renders it as ``(no task)``.
+    """
     from EpicStorage import get_epic_summary_data
 
     today = date.today()
@@ -598,7 +604,11 @@ def test_epic_summary_excludes_sessions_without_task(db):
     )
 
     data = get_epic_summary_data(week_num, year)
-    assert data == [], "Sessions with no task should not appear in epic summary data"
+    assert len(data) == 1, f"Expected 1 row, got {len(data)}: {data}"
+    date_str, epic_name, task_id, minutes = data[0]
+    assert epic_name is None, "Untagged sessions should be under (Misc) — i.e. None"
+    assert task_id == "", "Empty task label should be preserved as an empty string"
+    assert minutes == 120
 
 
 # ---------------------------------------------------------------------------

@@ -164,7 +164,8 @@ Output:
 
 ### `status`
 
-Refreshes the Today panel immediately. Does not write to the Output panel.
+Refreshes the cockpit panels (Active Session, Quick Stats, Today's
+Timeline) immediately. Does not write to the Output panel.
 
 ```
 status
@@ -238,45 +239,36 @@ Output example:
 
 ### `epic summary [wNN]`
 
-Opens the Epic Summary overlay showing time grouped by Epic for the target
-week. Defaults to the current week; `wNN` selects a specific ISO week number.
+Opens the Weekly Overview overlay for the target week. Defaults to the
+current week; `wNN` selects a specific ISO week number. The overlay shows
+time grouped day → Epic → task with both `HH:MM` and decimal duration
+columns on every row.
 
 ```
 epic summary
 epic summary w26
 ```
 
-See [Epic Summary overlay](#epic-summary-overlay) in `docs/tui.md` for the
-full layout and navigation reference.
+Same overlay as the `[w]` key binding and the `log` command — see
+[Weekly Overview overlay](tui.md#weekly-overview-overlay) in `docs/tui.md`.
 
 ---
 
 ### `log [wNN]`
 
-Opens the Log overlay showing the full week of sessions with task labels,
-daily totals, and a week total. Defaults to the current week; `wNN` selects a
-specific ISO week number.
+Opens the Weekly Overview overlay showing hours grouped day → Epic → task
+for the target week. Defaults to the current week; `wNN` selects a specific
+ISO week number.
 
 ```
 log
 log w23
 ```
 
-Output example:
-
-```
-╭─ 📅  Week 24, 2026  (Jun 09 – Jun 13) ─────────────────────╮
-│   Mon  #1  08:30–16:15  7.42h  Epic-42                       │
-│   Tue  #1  08:45–12:00  3.25h  Epic-42                       │
-│        #2  12:30–16:30  4.00h  Epic-11                       │
-│            daily total  7.25h                                 │
-│   Wed  —                                                      │
-│   Thu  —                                                      │
-│   Fri  —                                                      │
-│                                                               │
-│   Week total:  14.67h                                         │
-╰───────────────────────────────────────────────────────────────╯
-```
+Same overlay as the `[w]` key binding and the `epic summary` command. The
+previous individual-session log format has been retired — see
+[Weekly Overview overlay](tui.md#weekly-overview-overlay) in `docs/tui.md`
+for the current format.
 
 > **Year-boundary note:** `wNN` is resolved against the current year. Week 1
 > at the turn of the year may be ambiguous. This is a known edge case.

@@ -205,7 +205,7 @@ def cmd_status() -> None:
     """Print the live status panel to stdout.
 
     Does not accept AppContext: in TUI mode cmd_status is bypassed entirely
-    by CommandInput, which refreshes the TodayPanel directly instead.
+    by CommandInput, which refreshes the cockpit panels directly instead.
     """
     now = datetime.now()
     print_status(_build_day_status(now), now)

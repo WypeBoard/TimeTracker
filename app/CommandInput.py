@@ -14,7 +14,7 @@ Accepted commands:
   epic list
   epic summary [wNN]
   config                  (opens the configuration screen)
-  status                  (refreshes TodayPanel instead of printing)
+  status                  (refreshes the cockpit panels instead of printing)
 
 Supports:
   Enter    submit command and clear the field
@@ -96,9 +96,8 @@ class CommandInput(Input):
         args = tokens[1:]
 
         if command == "status":
-            # status refreshes the Today panel directly — no cmd_status call.
-            from app.TodayPanel import TodayPanel
-            self.app.query_one(TodayPanel).refresh_data()
+            # status refreshes the cockpit panels directly — no cmd_status call.
+            self.app.refresh_session_panels()
             return
 
         if command == "log":

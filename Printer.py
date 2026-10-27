@@ -107,16 +107,15 @@ def build_status_group(
 ) -> Group:
     """Build the Rich Group that represents the live status view.
 
-    Extracted so both print_status() and the TUI TodayPanel can reuse the
-    same rendering logic without going through console.print().
+    Extracted so both print_status() and any TUI panel that needs the same
+    layout can reuse the rendering logic without going through console.print().
 
     Args:
         status: Today's session data.
         now: Current datetime (used to compute leave time).
         show_progress: When False, the progress bar line (Logged X / Y [bar])
             is omitted. The remaining-time and leave-time lines are always
-            shown when relevant — ProgressStrip owns the bar in TUI mode, but
-            the leave estimate still lives in TodayPanel.
+            shown when relevant.
     """
     rows: list = []
 
@@ -181,8 +180,10 @@ def build_log_week_panel(
 ) -> Panel:
     """Build the Rich Panel for a full week log view.
 
-    Extracted so both print_log_week() and the TUI LogScreen can reuse the
-    same rendering logic.
+    Retained so ``print_log_week()`` (the CLI code path) can reuse the same
+    rendering logic. The TUI no longer uses this panel — the Weekly Overview
+    overlay renders the day → Epic → task grouping via
+    ``build_weekly_overview_panel`` instead.
 
     Args:
         week_days: Dict of date_str → {sessions, total, week} from read_log().
@@ -385,6 +386,16 @@ def _minutes_to_clock(minutes: int) -> str:
     return f"{h}:{m:02d}"
 
 
+def _minutes_to_decimal(minutes: int) -> str:
+    """Convert total minutes to decimal-hour format (e.g. 90 → '1.50').
+
+    No ``h`` suffix so the decimal column is visually distinguishable from
+    the ``HH:MM`` column when both are shown side-by-side in the Weekly
+    Overview overlay.
+    """
+    return f"{max(minutes, 0) / 60:.2f}"
+
+
 def build_epic_summary_panel(data: list[tuple], week_num: int, year: int) -> Panel:
     """Build the Rich Panel for the Epic summary overlay.
 
@@ -500,6 +511,149 @@ def build_epic_summary_panel(data: list[tuple], week_num: int, year: int) -> Pan
     t.add_row(
         Text("  Week total:", style="bold"),
         Text(_minutes_to_clock(week_total), style="bold cyan"),
+    )
+
+    return Panel(t, title=title, border_style=_C_PROMARK, padding=(0, 2))
+
+
+# ---------------------------------------------------------------------------
+# Weekly overview
+# ---------------------------------------------------------------------------
+
+def build_weekly_overview_panel(
+    data: list[tuple], week_num: int, year: int,
+    daily_promark: dict[str, tuple[str, str]] | None = None,
+) -> Panel:
+    """Build the Rich Panel for the Weekly Overview overlay.
+
+    Same day → Epic → task hierarchy as ``build_epic_summary_panel`` but with
+    two duration columns on every row:
+
+    - Left column: base-60 clock (``HH:MM``) — matches the format used by
+      time-registration systems that expect actual hours and minutes.
+    - Right column: decimal hundredths of an hour (no ``h`` suffix) — matches
+      registration systems that expect decimal input.
+
+    Sessions data has the same shape as ``build_epic_summary_panel``:
+    ``(date_str, epic_name_or_None, task_id, total_minutes)``.
+
+    Args:
+        daily_promark: Optional ``{date_str: (start_hhmm, end_hhmm)}`` map. When
+            supplied, each day-header row shows the Promark-style consolidated
+            span (e.g. ``07:00 → 15:45``) beside the day label. This restores
+            the compact "single loggable session" line from the retired log
+            format so users can read the day's registration boundary directly
+            off the overlay without switching to the ``promark`` output.
+    """
+    jan4 = date(year, 1, 4)
+    week1_monday = jan4 - timedelta(days=jan4.weekday())
+    monday = week1_monday + timedelta(weeks=week_num - 1)
+
+    # Right-aligned week indicator in the panel title matches the feature
+    # spec §21 chrome (`◄  Week NN/YYYY  ►`). The date range in dim reuses
+    # the same format as the Epic Summary panel for visual consistency.
+    title = (
+        f"Weekly Overview"
+        f"  [dim]({monday.strftime('%b %d')} – "
+        f"{(monday + timedelta(days=6)).strftime('%b %d')})[/dim]"
+        f"    ◄  Week {week_num:02d}/{year}  ►"
+    )
+
+    # Same day → epic → task grouping as the Epic summary. Kept as a local
+    # loop rather than sharing a helper because the two functions render into
+    # different table shapes and diverging now would obscure that.
+    day_order: list[str] = []
+    day_epic_order: dict[str, list[str]] = {}
+    epic_task_data: dict[tuple, list[tuple[str, int]]] = {}
+
+    for date_str, epic_name, task_id, total_minutes in data:
+        display_name = epic_name if epic_name is not None else "(Misc)"
+        if date_str not in day_epic_order:
+            day_order.append(date_str)
+            day_epic_order[date_str] = []
+        key = (date_str, display_name)
+        if display_name not in day_epic_order[date_str]:
+            day_epic_order[date_str].append(display_name)
+            epic_task_data[key] = []
+        epic_task_data[key].append((task_id, total_minutes))
+
+    _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday",
+                  "Friday", "Saturday", "Sunday"]
+    week_total = 0
+
+    t = Table(
+        box=None,
+        show_header=True,
+        header_style="bold dim",
+        show_edge=False,
+        padding=(0, 1),
+        expand=True,
+    )
+    t.add_column("Name", ratio=1)
+    t.add_column("HH:MM",   justify="right", no_wrap=True)
+    t.add_column("Decimal", justify="right", no_wrap=True)
+
+    if not day_order:
+        t.add_row(Text("No tracked time this week.", style=_C_DIM), Text(""), Text(""))
+    else:
+        for day_index, date_str in enumerate(day_order):
+            day_total = sum(
+                mins
+                for epic_key in day_epic_order[date_str]
+                for _, mins in epic_task_data[(date_str, epic_key)]
+            )
+            week_total += day_total
+
+            d = date.fromisoformat(date_str)
+            day_label = _DAY_NAMES[d.weekday()]
+            display_date = d.strftime("%b %d")
+
+            if day_index > 0:
+                t.add_row(Text(""), Text(""), Text(""))
+
+            # Day header — optionally suffixed with the Promark-style
+            # consolidated span (e.g. "07:00 → 15:45"). The span is rendered
+            # dim so the day label + totals remain the visual focus.
+            day_header = Text(f"  {day_label} {display_date}", style="bold white")
+            span = (daily_promark or {}).get(date_str)
+            if span is not None:
+                day_header.append(f"   {span[0]} → {span[1]}", style="dim")
+
+            t.add_row(
+                day_header,
+                Text(_minutes_to_clock(day_total), style="bold white"),
+                Text(_minutes_to_decimal(day_total), style="bold white"),
+            )
+
+            for epic_display in day_epic_order[date_str]:
+                key = (date_str, epic_display)
+                epic_total = sum(mins for _, mins in epic_task_data[key])
+                is_misc = epic_display == "(Misc)"
+                style = "dim" if is_misc else "bold cyan"
+
+                t.add_row(
+                    Text(f"    {epic_display}", style=style),
+                    Text(_minutes_to_clock(epic_total), style=style),
+                    Text(_minutes_to_decimal(epic_total), style=style),
+                )
+
+                for task_id, task_mins in sorted(epic_task_data[key]):
+                    # Sessions with no task label surface as "(no task)" so
+                    # untagged work is still visible instead of rendering
+                    # as a blank magenta row.
+                    task_label = task_id if task_id else "(no task)"
+                    task_style = "magenta" if task_id else "dim"
+                    t.add_row(
+                        Text(f"      {task_label}", style=task_style),
+                        Text(_minutes_to_clock(task_mins), style=task_style),
+                        Text(_minutes_to_decimal(task_mins), style=task_style),
+                    )
+
+    t.add_row(Text(""), Text(""), Text(""))
+    t.add_row(
+        Text("  Week total", style="bold"),
+        Text(_minutes_to_clock(week_total), style="bold cyan"),
+        Text(_minutes_to_decimal(week_total), style="bold cyan"),
     )
 
     return Panel(t, title=title, border_style=_C_PROMARK, padding=(0, 2))
