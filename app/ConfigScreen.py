@@ -3,14 +3,16 @@
 Allows the user to edit application settings without touching code:
 
   - Daily work target (37h / 40h / Custom)
-  - Lunch handling (excluded from hours, Promark offset)
+  - Lunch handling (included/excluded worktime, lunch duration)
   - Excluded tasks (not counted toward the daily target)
   - Always-separate tasks (standalone Promark rows)
 
 Interaction model:
   - All edits are held in memory while the screen is open.
   - [Save]: validates all fields; if valid, writes to the database and closes.
-             If invalid, shows an inline error and stays open.
+             If invalid, shows an inline error and stays open. Text left in an
+             open "add task" input is committed before saving rather than
+             being discarded.
   - [Close] / Escape: discards all unsaved changes and closes.
 
 Access:
@@ -24,6 +26,8 @@ from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, RadioButton, RadioSet, Static
+
+from SettingsStorage import SettingsRepository
 
 
 class ConfigScreen(ModalScreen):
@@ -87,18 +91,18 @@ class ConfigScreen(ModalScreen):
         width: 10;
     }
 
-    #lunch-offset-row {
+    #lunch-duration-row {
         height: auto;
         margin-top: 0;
     }
 
-    #lunch-offset-row Label {
+    #lunch-duration-row Label {
         padding: 0 1;
         height: 3;
         content-align: left middle;
     }
 
-    #lunch-offset-input {
+    #lunch-duration-input {
         width: 8;
     }
 
@@ -147,6 +151,8 @@ class ConfigScreen(ModalScreen):
         # In-memory task lists — only written to DB on Save.
         self._excluded_tasks: list[str] = []
         self._separate_tasks: list[str] = []
+        # Set in on_mount: True when a stored task list could not be parsed.
+        self._task_lists_corrupt: bool = False
 
     # ------------------------------------------------------------------ #
     # Widget composition
@@ -170,12 +176,18 @@ class ConfigScreen(ModalScreen):
             # ── Lunch ─────────────────────────────────────────────────────
             yield Static("Lunch", classes="section-heading")
             with RadioSet(id="lunch-radio"):
-                yield RadioButton("Excluded from working hours", id="lunch-excl")
                 yield RadioButton("Included in working hours", id="lunch-incl")
-            with Horizontal(id="lunch-offset-row"):
-                yield Label("Promark offset: ")
-                yield Input("", placeholder="0", id="lunch-offset-input")
-                yield Label(" minutes  (0 or blank = disabled)")
+                yield RadioButton("Excluded from working hours", id="lunch-excl")
+            yield Static(
+                "Excluded = the break is your own time: it does not count "
+                "toward the daily target and is always reserved in the "
+                "registered day span.",
+                classes="section-hint",
+            )
+            with Horizontal(id="lunch-duration-row"):
+                yield Label("Lunch duration: ")
+                yield Input("", placeholder="30", id="lunch-duration-input")
+                yield Label(" minutes")
             yield Static("", id="lunch-error", classes="error-text")
 
             # ── Excluded tasks ─────────────────────────────────────────────
@@ -217,7 +229,6 @@ class ConfigScreen(ModalScreen):
 
     def on_mount(self) -> None:
         """Load current settings from the database and populate the UI."""
-        from SettingsStorage import SettingsRepository
         settings = SettingsRepository()
 
         # ── Daily work target ────────────────────────────────────────────
@@ -238,20 +249,29 @@ class ConfigScreen(ModalScreen):
             custom_input.value = str(target)
 
         # ── Lunch ────────────────────────────────────────────────────────
-        if settings.get_lunch_excluded():
-            self._select_radio("lunch-radio", 0)   # Excluded (default)
-        else:
-            self._select_radio("lunch-radio", 1)   # Included
+        # Radio index 0 = Included, index 1 = Excluded (default).
+        self._select_radio("lunch-radio", 1 if settings.get_lunch_excluded() else 0)
 
-        offset = settings.get_lunch_promark_offset_minutes()
-        self.query_one("#lunch-offset-input", Input).value = str(offset) if offset != 0 else ""
+        self.query_one("#lunch-duration-input", Input).value = str(
+            settings.get_lunch_duration_minutes()
+        )
 
         # ── Task lists ───────────────────────────────────────────────────
+        # If a stored list is unreadable the screen must not pretend it is
+        # empty — Save would then overwrite the real data with [].
+        self._task_lists_corrupt = settings.has_corrupt_task_lists()
+
         self._excluded_tasks = list(settings.get_excluded_tasks())
         self._rebuild_excluded_list()
 
         self._separate_tasks = list(settings.get_always_separate_tasks())
         self._rebuild_separate_list()
+
+        if self._task_lists_corrupt:
+            self.query_one("#excluded-error", Static).update(
+                "⚠  A stored task list could not be read — saving is blocked "
+                "to avoid overwriting it. See the log for the raw value."
+            )
 
     def _select_radio(self, radio_set_id: str, index: int) -> None:
         """Programmatically select a RadioButton by its 0-based index.
@@ -443,6 +463,22 @@ class ConfigScreen(ModalScreen):
         # Clear previous error messages.
         self.query_one("#target-error", Static).update("")
         self.query_one("#lunch-error", Static).update("")
+        self.query_one("#excluded-error", Static).update("")
+        self.query_one("#separate-error", Static).update("")
+
+        # ── Refuse to overwrite data we could not read ────────────────────
+        if self._task_lists_corrupt:
+            self.query_one("#excluded-error", Static).update(
+                "⚠  Saving is blocked: a stored task list is unreadable. "
+                "Repair or clear the setting before saving."
+            )
+            return
+
+        # ── Commit text still sitting in an open add-input ────────────────
+        # Clicking [Save] straight after typing a task name used to discard
+        # it silently, which looked exactly like "my settings disappeared".
+        self._commit_pending_add_input("excluded")
+        self._commit_pending_add_input("separate")
 
         # ── Validate daily work target ────────────────────────────────────
         custom_hours_input = self.query_one("#custom-hours-input", Input)
@@ -457,34 +493,41 @@ class ConfigScreen(ModalScreen):
             )
             return
 
-        # ── Validate Promark offset ───────────────────────────────────────
-        offset_raw = self.query_one("#lunch-offset-input", Input).value.strip()
-        if offset_raw in ("", "0"):
-            lunch_offset = 0
+        # ── Validate lunch duration ───────────────────────────────────────
+        duration_raw = self.query_one("#lunch-duration-input", Input).value.strip()
+        if duration_raw == "":
+            lunch_duration = SettingsRepository.DEFAULT_LUNCH_DURATION_MINUTES
         else:
             try:
-                lunch_offset = int(offset_raw)
-                if lunch_offset < 0:
-                    raise ValueError("negative")
+                lunch_duration = int(duration_raw)
+                if lunch_duration < 0 or lunch_duration > 240:
+                    raise ValueError("out of range")
             except ValueError:
                 self.query_one("#lunch-error", Static).update(
-                    "⚠  Promark offset must be a non-negative integer or blank."
+                    "⚠  Lunch duration must be a whole number of minutes (0–240)."
                 )
                 return
 
         # ── Determine lunch exclusion from radio ──────────────────────────
-        # RadioSet.pressed_index is the 0-based index of the currently selected button.
-        # Index 0 = "Excluded from working hours".
+        # RadioSet.pressed_index is the 0-based index of the currently selected
+        # button. Index 0 = "Included", index 1 = "Excluded".
         lunch_radio = self.query_one("#lunch-radio", RadioSet)
-        lunch_excluded = (lunch_radio.pressed_index == 0)
+        lunch_excluded = (lunch_radio.pressed_index == 1)
 
         # ── All valid — write to database ─────────────────────────────────
-        from SettingsStorage import SettingsRepository
         settings = SettingsRepository()
         settings.set_daily_work_target(target_hours)
         settings.set_lunch_excluded(lunch_excluded)
-        settings.set_lunch_promark_offset_minutes(lunch_offset)
+        settings.set_lunch_duration_minutes(lunch_duration)
         settings.set_excluded_tasks(self._excluded_tasks)
         settings.set_always_separate_tasks(self._separate_tasks)
 
         self.dismiss()
+
+    def _commit_pending_add_input(self, which: str) -> None:
+        """Add any text left in the visible add-input before saving."""
+        if not self.query_one(f"#{which}-input-row").display:
+            return
+        pending = self.query_one(f"#{which}-add-input", Input).value
+        if pending.strip():
+            self._add_task_to_list(which, pending)

@@ -1,15 +1,14 @@
 # TimeTracker
 
-A Python 3.12 CLI/TUI application for logging daily work sessions to a local SQLite database.
+A Python 3.12 TUI application for logging daily work sessions to a local SQLite database.
 
 ---
 
 ## Overview
 
-TimeTracker records when you clock in and out, associates sessions with task or epic IDs, and gives you a clear picture of your day and week. It runs in two modes:
+TimeTracker records when you clock in and out, associates sessions with task or epic IDs, and gives you a clear picture of your day and week.
 
-- **One-shot CLI** — run a command, get output, exit.
-- **Interactive TUI** — a full-screen Textual dashboard that stays open all day.
+It runs as a single full-screen Textual dashboard that stays open all day. All commands are typed into the command bar at the bottom of the screen — there is no one-shot CLI mode.
 
 Data is stored in a SQLite database at `%APPDATA%\TimeTracker\timetracker.db`. The directory and schema are created automatically on first run.
 
@@ -44,52 +43,53 @@ pip install -r requirements-dev.txt
 
 ## Usage
 
-### Interactive TUI
-
-Run with no arguments to launch the full-screen dashboard:
+Launch the dashboard:
 
 ```powershell
 python TimeTracker.py
 ```
 
-The TUI shows today's sessions, a week overview, a task summary, progress bars, an output log, and a command input bar — all in one screen. Press `ctrl+q` to quit.
+The TUI shows the active session, quick stats, today's timeline, task notes, an output log, and a command input bar — all in one screen. Press `ctrl+q` to quit.
 
 ![TUI dashboard](docs/images/TUI%20dashboard.png)
 
-### CLI Commands
+### Commands
 
-All commands follow the pattern `python TimeTracker.py <command> [args]`.
+All commands are typed into the command bar and submitted with `Enter`.
 
 | Command | Description |
 |---------|-------------|
 | `start [hhmm] [epic]` | Clock in — open a new session |
+| `lunch [hhmm]` | Close any open session and start a Lunch session |
 | `pause [hhmm]` | Clock out temporarily |
 | `resume [hhmm]` | Resume after a break, carrying the task/epic forward |
-| `stop [hhmm]` | Clock out for the day and show a day summary |
-| `status` | Show today's sessions and estimated leave time |
+| `stop [hhmm]` | Clock out for the day |
+| `status` | Refresh the cockpit panels |
 | `task <epic> [-s N]` | Tag a session with a task/epic ID |
-| `log [wNN]` | Show the full week log (default: current week) |
+| `log [wNN]` | Open the Weekly Overview overlay |
+| `epic add <name>` | Create a new Epic |
+| `epic list` | List all Epics |
+| `epic summary [wNN]` | Open the Weekly Overview overlay |
 | `promark [wNN]` | Show Promark-style consolidated entries |
+| `config` | Open the configuration screen |
 
 The optional `hhmm` argument is a four-digit time override (e.g. `0830` for 08:30). The optional `wNN` argument selects an ISO week number (e.g. `w23`).
 
 #### Examples
 
-```powershell
-python TimeTracker.py start
-python TimeTracker.py start 0830
-python TimeTracker.py start 0830 Epic-42
-python TimeTracker.py pause
-python TimeTracker.py resume 1150
-python TimeTracker.py stop 1715
-python TimeTracker.py status
-python TimeTracker.py task Epic-42
-python TimeTracker.py task Epic-11 -s 2
-python TimeTracker.py log
-python TimeTracker.py log w23
-python TimeTracker.py promark
-python TimeTracker.py promark w21
 ```
+start
+start 0830
+start 0830 Epic-42
+lunch 1200
+resume 1230
+stop 1715
+task Epic-42 -s 2
+log w23
+promark
+```
+
+Full reference: [`docs/detailed-design/commands.md`](docs/detailed-design/commands.md)
 
 ---
 
@@ -99,40 +99,52 @@ python TimeTracker.py promark w21
 |-----|--------|
 | `Enter` | Submit command |
 | `↑` / `↓` | Browse command history |
-| `Esc` | Clear input (or close Log overlay) |
-| `l` | Open the Log overlay |
+| `Esc` | Clear input (or close the current overlay) |
 | `Tab` / `Shift+Tab` | Cycle focus between panels |
+| `w` | Open the Weekly Overview overlay |
+| `ctrl+,` | Open the configuration screen |
 | `ctrl+q` | Quit |
-| `←` / `→` (Log overlay) | Navigate between weeks |
+| `←` / `→` (Weekly Overview) | Navigate between weeks |
 
 ---
 
 ## Project Structure
 
 ```
-TimeTracker.py        — Entry point; CLI argument parsing and TUI launch
+TimeTracker.py        — Entry point; schema creation and TUI launch
 Commands.py           — Command implementations (start, stop, pause, …)
 Storage.py            — Session domain layer (the only file that knows the schema)
+EpicStorage.py        — Epic domain layer
+SettingsStorage.py    — Settings domain layer
 Constants.py          — DB_FILE path and application constants
-app_context.py        — App context for CLI mode
+logger.py             — Logging configuration and crash capture
+app_context.py        — Application context protocol
 Printer.py            — Rich-based output formatting
 Promark.py            — Promark report logic
 app/                  — Textual TUI components
 db/                   — Database connection and repository helpers
-docs/                 — Feature documentation
+docs/                 — Documentation, organised by document type
 features/             — Feature design documents
 tests/                — pytest test suite
 ```
+
+See [`docs/design/architecture.md`](docs/design/architecture.md) for the module map and layering rules.
 
 ---
 
 ## Documentation
 
-Detailed documentation lives in the `docs/` directory:
+Documentation is organised by **document type**. Start at the index:
 
-- [`docs/commands.md`](docs/commands.md) — Full CLI command reference
-- [`docs/tui.md`](docs/tui.md) — TUI layout, panels, and keyboard reference
-- [`docs/sqlite-datasource.md`](docs/sqlite-datasource.md) — Database schema and storage layer
+**[`docs/index.md`](docs/index.md)** — catalogue of all documents
+
+| Area | Documents |
+|------|-----------|
+| Design | [User Interface Design](docs/design/user-interface-design.md) · [Architecture](docs/design/architecture.md) |
+| Detailed Design | [Commands](docs/detailed-design/commands.md) · [Configuration](docs/detailed-design/configuration.md) · [Epic Catalog](docs/detailed-design/epic-catalog.md) · [SQLite Datasource](docs/detailed-design/sqlite-datasource.md) |
+| Operations | [Logging](docs/operations/logging.md) · [Software Standard](docs/operations/software-standard.md) |
+
+Every document carries a `## Decisions` section recording why the behaviour is what it is, and whether the driver was law, business, technical constraint, or preference.
 
 ---
 

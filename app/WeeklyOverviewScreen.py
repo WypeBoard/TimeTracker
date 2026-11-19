@@ -62,7 +62,7 @@ class WeeklyOverviewScreen(ModalScreen):
         lunch_excluded = settings.get_lunch_excluded()
         excluded_tasks = settings.get_excluded_tasks()
         always_separate = settings.get_always_separate_tasks()
-        lunch_offset = settings.get_lunch_promark_offset_minutes()
+        lunch_duration = settings.get_lunch_duration_minutes()
 
         data = get_epic_summary_data(
             self._week_num, self._year,
@@ -70,12 +70,12 @@ class WeeklyOverviewScreen(ModalScreen):
             excluded_tasks=excluded_tasks,
         )
 
-        # Per-day consolidated span (Promark-style: first_start → first_start
-        # + worked_minutes) so the day header can show the equivalent of the
-        # retired "single loggable session" line, e.g. "07:00 → 15:45".
+        # Per-day consolidated span (Promark-style) so the day header can show
+        # the start/end times that are actually registered, e.g. "07:00 → 15:45".
         # We reuse compute_day_promark to keep the rules identical to the
-        # `promark` command (always-separate tasks excluded, optional Lunch
-        # exclusion, optional Promark offset).
+        # `promark` command (always-separate tasks excluded, Lunch excluded and
+        # replaced by a flat contractual lunch break when configured as the
+        # employee's own time).
         daily_promark: dict[str, tuple[str, str]] = {}
         days = read_log()
         jan4 = date(self._year, 1, 4)
@@ -90,7 +90,7 @@ class WeeklyOverviewScreen(ModalScreen):
                 days[date_str]["sessions"],
                 always_separate,
                 lunch_excluded,
-                lunch_offset,
+                lunch_duration,
             )
             if consolidated and consolidated["start"] and consolidated["end"]:
                 daily_promark[date_str] = (consolidated["start"], consolidated["end"])

@@ -50,6 +50,9 @@ class TimeTrackerApp(App):
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
         Binding("w", "show_weekly", "Weekly Overview"),
+        # Ctrl+, is the VS Code settings convention and is documented in
+        # docs/configuration.md — the binding was missing until now.
+        Binding("ctrl+comma", "show_config", "Configuration"),
     ]
 
     DEFAULT_CSS = """
@@ -68,12 +71,14 @@ class TimeTrackerApp(App):
     }
 
     ActiveSessionPanel {
-        width: 3fr;
+        width: 1fr;
         height: 100%;
     }
 
+    /* Fixed width so the "Leave ~15:00 / ~15:30 (w/e lunch)" row is never
+       truncated — see features/completed/lunch-configuration.md. */
     QuickStatsPanel {
-        width: 1fr;
+        width: 40;
         height: 100%;
     }
 

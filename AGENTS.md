@@ -1,4 +1,4 @@
-# AGENTS.md
+﻿# AGENTS.md
 
 ## Project Overview
 
@@ -162,11 +162,12 @@ Example:
 
 | File | Action | Description |
 |------|--------|-------------|
-| `docs/commands.md` | Update | Add new `export` command to the command reference |
-| `docs/export.md` | Create | New doc describing export behavior and options |
+| `docs/detailed-design/commands.md` | Update | Add new `export` command to the command reference |
+| `docs/detailed-design/export.md` | Create | New doc describing export behavior and options |
+| `docs/index.md` | Update | Register the new document |
 
 > Note: A single feature may require changes to multiple documentation files.
-> Always check existing docs before creating a new file — it may be more appropriate to extend an existing one.
+> Always check existing docs before creating a new file - it may be more appropriate to extend an existing one.
 
 ## Brainstorm Notes
 
@@ -231,28 +232,65 @@ accordingly.
 
 # Documentation Rules
 
-Documentation should focus on the current state of the application.
+Documentation describes the current state of the application.
+
+## Document Types
+
+Documentation is organised by **document type**, not by module. Each folder
+answers a different question for a different reader:
+
+| Folder | Type | Answers |
+|--------|------|---------|
+| `docs/design/` | User Design, Architecture | What the user sees; how the system is shaped |
+| `docs/detailed-design/` | Detailed Design | What each process does; the data model |
+| `docs/operations/` | Operations | How it is run, supported, and written |
+
+`docs/index.md` is the catalogue of every document and must be updated when a
+document is added, moved, or removed.
+
+Before writing anything new, find the type it belongs to. Creating a new file
+is a last resort â€” prefer extending an existing document.
+
+## Decisions Are Mandatory
+
+Every document carries a `## Decisions` section recording **why** the
+behaviour is what it is. Each entry uses a fixed shape:
+
+```md
+**YYYY-MM-DD - Short title**
+- Decision: What the application does now.
+- Rejected: The alternative that was considered and not taken.
+- Driver: `Law` | `Business` | `Technical` | `Preference`
+```
+
+The driver is the important field â€” it tells a future reader how freely the
+rule may be changed. See `docs/index.md` for the driver definitions.
+
+Decisions are append-only. A reversed decision keeps its original entry and
+gains a new one that supersedes it.
 
 ## Multiple Files May Need Updating
 
-A single feature can affect more than one documentation file. Before writing any documentation:
+A single feature can affect more than one documentation file. Before writing
+any documentation:
 
-1. Review all existing files under `docs/` to identify any that already cover related behavior.
-2. Prefer **updating** an existing file over creating a new one when the content logically belongs there.
-3. Create a new file only when the feature introduces a genuinely distinct topic.
+1. Review all folders under `docs/` to identify files that already cover
+   related behavior.
+2. Prefer **updating** an existing file over creating a new one.
+3. Create a new file only for a genuinely distinct topic â€” and register it in
+   `docs/index.md`.
 
-Every affected documentation file must be updated — not just the most obvious one.
+Every affected documentation file must be updated â€” not just the most obvious
+one.
 
 ## Suggested Sections
-
-Suggested sections for a documentation file:
 
 ```md
 # Feature Name
 
 ## Purpose
 
-## Current Behavior
+## Current Behaviour
 
 ## Usage
 
@@ -262,224 +300,33 @@ Suggested sections for a documentation file:
 
 ## Notes
 
-## Related Features
+## Related Documents
 ```
 
-Future ideas should generally remain in:
+`features/` documents hold the *reasoning*; `docs/` holds the *result*. When a
+feature completes, its durable conclusions move into a `## Decisions` section
+in `docs/`.
+
+Future ideas remain in `feature/<feature>.md` rather than user-facing
+documentation.
+
+See the Status Lifecycle section above for archiving rules â€” completed
+features are moved to `features/completed/`.
+
+---
+
+# Technical Standards
+
+All code-level rules â€” Python style, layering, database conventions,
+dependency policy, testing, refactoring, and the Definition of Done â€” live in:
 
 ```text
-feature/<feature>.md
+docs/operations/software-standard.md
 ```
 
-rather than user-facing documentation.
-
-See the Status Lifecycle section above for archiving rules — completed features are moved to `features/completed/`.
-
----
-
-# Python Guidelines
-
-## Prefer Explicitness Over Cleverness
-
-Readability is preferred over advanced Python tricks.
-
-The codebase should remain understandable to developers whose primary background is not Python.
-
-Avoid introducing complexity solely to achieve more "Pythonic" code.
-
----
-
-## Explain Advanced Python Features
-
-When using advanced Python-specific language features, prioritize clarity.
-
-Examples include:
-
-* TypeVar
-* ParamSpec
-* Protocol
-* Annotated
-* Self
-* Generic types
-* overload
-* descriptor protocols
-* metaclasses
-* contextvars
-
-and special methods such as:
-
-* **new**
-* **getattr**
-* **getattribute**
-* **class_getitem**
-* property-heavy APIs
-
-When such features are genuinely beneficial:
-
-1. Add explanatory comments.
-2. Explain why the feature was chosen.
-3. Prefer maintainability over cleverness.
-
-Code should optimize for future understanding.
-
----
-
-# Dependency Policy
-
-## Prefer Battle-Tested Libraries Over Custom Implementations
-
-Well-established, widely adopted libraries should always be considered before writing a custom solution.
-
-Examples of libraries that should be preferred when relevant:
-
-* **Textual / Rich** — terminal UI and formatting
-* **SQLAlchemy** — database access and ORM
-* **Pydantic** — data validation and settings management
-* **Click / Typer** — CLI argument parsing
-
-A custom implementation is acceptable when:
-
-* The required scope is small and self-contained
-* No well-known library covers the use case well
-* The added dependency would far exceed the complexity it replaces
-
-When proposing or accepting a dependency, document:
-
-* Why it is needed
-* Alternatives considered (including a custom implementation)
-* Benefits gained
-* Maintenance implications
-
-Avoid dependency sprawl — each dependency must justify its inclusion. But do not reject a proven library simply to avoid a dependency.
-
----
-
-# Database Conventions
-
-Every new SQLite table introduced to the project must follow the conventions already established by the `sessions` / `sessions_h` pair. These rules ensure a consistent, auditable data layer.
-
-## Table Naming
-
-| Purpose | Naming pattern |
-|---------|---------------|
-| Main data table | `<noun>` (e.g. `sessions`, `settings`) |
-| History / shadow table | `<noun>_h` (e.g. `sessions_h`, `settings_h`) |
-
-## History / Shadow Table
-
-Every main table must have a corresponding `_h` shadow table that records every INSERT, UPDATE, and DELETE automatically via SQLite triggers. Application code **never writes to `_h` tables directly**.
-
-The `_h` table always has these extra columns prepended:
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `h_id` | INTEGER | Primary key, auto-incremented |
-| `h_operation` | TEXT | `'I'` Insert · `'U'` Update · `'D'` Delete |
-| `h_timestamp` | TEXT | ISO-8601 UTC datetime (`datetime('now')`) |
-
-All remaining columns mirror the main table exactly (same names, same types, same nullability — except primary-key constraints are dropped).
-
-Example for a hypothetical `widgets` table:
-
-```sql
-CREATE TABLE IF NOT EXISTS widgets (
-    id    INTEGER PRIMARY KEY AUTOINCREMENT,
-    name  TEXT NOT NULL,
-    value TEXT
-);
-
-CREATE TABLE IF NOT EXISTS widgets_h (
-    h_id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    h_operation TEXT    NOT NULL,
-    h_timestamp TEXT    NOT NULL,
-    id          INTEGER NOT NULL,
-    name        TEXT    NOT NULL,
-    value       TEXT
-);
-```
-
-## Triggers
-
-Three triggers must be created — one for each DML operation. All use `CREATE TRIGGER IF NOT EXISTS` and fire `AFTER` the statement:
-
-```sql
-CREATE TRIGGER IF NOT EXISTS widgets_after_insert
-AFTER INSERT ON widgets
-BEGIN
-    INSERT INTO widgets_h (h_operation, h_timestamp, id, name, value)
-    VALUES ('I', datetime('now'), NEW.id, NEW.name, NEW.value);
-END;
-
-CREATE TRIGGER IF NOT EXISTS widgets_after_update
-AFTER UPDATE ON widgets
-BEGIN
-    INSERT INTO widgets_h (h_operation, h_timestamp, id, name, value)
-    VALUES ('U', datetime('now'), NEW.id, NEW.name, NEW.value);
-END;
-
-CREATE TRIGGER IF NOT EXISTS widgets_after_delete
-AFTER DELETE ON widgets
-BEGIN
-    INSERT INTO widgets_h (h_operation, h_timestamp, id, name, value)
-    VALUES ('D', datetime('now'), OLD.id, OLD.name, OLD.value);
-END;
-```
-
-Key rules:
-- DELETE triggers reference `OLD.*`; INSERT and UPDATE triggers reference `NEW.*`.
-- `h_timestamp` is always UTC — it is an audit timestamp, not a user-visible time.
-- Triggers fire inside the same transaction as the originating statement, so history rows are committed or rolled back atomically.
-
-## Schema Location
-
-All DDL (main table, history table, and triggers) belongs in `Storage.py` inside the `create_schema()` function. This function is called once at application startup and uses `IF NOT EXISTS` throughout, making it a safe no-op after the first run.
-
-No DDL may be placed outside `create_schema()`.
-
-## Layer Rules
-
-The data access layer follows a strict dependency chain — no layer may skip a level:
-
-```
-Commands.py  →  Storage.py  →  db/repository.py  →  db/connection.py
-```
-
-- `Commands.py` calls `Storage.py` functions only. It never imports from `db/`.
-- `Storage.py` calls `db/repository.py` helpers only (except `create_schema`, which uses `Connection` directly to batch all DDL in one transaction).
-- `db/repository.py` calls `db/connection.py` only.
-- Nothing outside `db/` imports from `db/` except `Storage.py`.
-
-When a new domain area is large enough (e.g. settings, epics), it may live in a separate `*Storage.py` module (e.g. `SettingsStorage.py`) that follows the same rules.
-
----
-
-# Refactoring Guidelines
-
-Refactoring is encouraged when it improves:
-
-* Readability
-* Maintainability
-* Simplicity
-* Reduction of duplication
-
-Behavior-changing refactors require approval.
-
-Pure refactoring that does not alter behavior may proceed.
-
-When in doubt, ask.
-
----
-
-# Definition of Done
-
-A task is not complete until all applicable items are complete:
-
-* Implementation completed
-* Tests added or updated
-* Documentation updated
-* Type hints updated
-* Existing functionality verified
-* Feature status updated when appropriate
+That document is authoritative on **how** code is written. This document is
+authoritative on **when** it may be written. Do not duplicate technical rules
+here.
 
 ---
 

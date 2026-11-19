@@ -273,7 +273,7 @@ def cmd_log(ctx: AppContext, week_str: str | None = None) -> None:
 def cmd_promark(ctx: AppContext, week_str: str | None = None) -> None:
     """Print a full week's Promark entries, applying configured settings.
 
-    Reads always_separate_tasks, lunch_excluded, and lunch_promark_offset_minutes
+    Reads always_separate_tasks, lunch_excluded, and lunch_duration_minutes
     from SettingsRepository and passes them as plain arguments to Promark.py.
     Builds a list of processed day entries (one per weekday, Mon–Fri) and
     passes the result to ctx.show_promark().
@@ -290,7 +290,7 @@ def cmd_promark(ctx: AppContext, week_str: str | None = None) -> None:
     settings = SettingsRepository()
     always_separate = settings.get_always_separate_tasks()
     lunch_excluded = settings.get_lunch_excluded()
-    lunch_offset = settings.get_lunch_promark_offset_minutes()
+    lunch_duration = settings.get_lunch_duration_minutes()
 
     # Resolve Monday of the target ISO week.
     jan4 = date(target_year, 1, 4)
@@ -307,7 +307,7 @@ def cmd_promark(ctx: AppContext, week_str: str | None = None) -> None:
         if date_str in days:
             all_sessions = days[date_str]["sessions"]  # (start, end, task)
             consolidated, separate = compute_day_promark(
-                all_sessions, always_separate, lunch_excluded, lunch_offset
+                all_sessions, always_separate, lunch_excluded, lunch_duration
             )
         else:
             consolidated, separate = None, []
@@ -359,8 +359,8 @@ def cmd_epic_summary(ctx: AppContext, week_str: str | None = None) -> None:
 def _build_day_status(now: datetime | None = None) -> DayStatus:
     """Gather today's log data into a DayStatus for the printers.
 
-    Reads settings (daily target, lunch exclusion, excluded tasks, lunch
-    Promark offset) at call time. No settings state is cached.
+    Reads settings (daily target, lunch handling, excluded tasks) at call
+    time. No settings state is cached.
     """
     from SettingsStorage import SettingsRepository
 
@@ -371,7 +371,7 @@ def _build_day_status(now: datetime | None = None) -> DayStatus:
     target_hours = settings.get_daily_work_target()
     lunch_excluded = settings.get_lunch_excluded()
     excluded_tasks = settings.get_excluded_tasks()
-    lunch_offset = settings.get_lunch_promark_offset_minutes()
+    lunch_duration = settings.get_lunch_duration_minutes()
 
     today_sessions = get_today_sessions()
 
@@ -387,15 +387,6 @@ def _build_day_status(now: datetime | None = None) -> DayStatus:
     filtered = _filter_for_hours(completed, lunch_excluded, excluded_tasks)
     total_hours = sum(_session_hours(s, e) for s, e, _ in filtered)
 
-    # actual_lunch_minutes: sum of Lunch session durations from ALL completed
-    # sessions, regardless of lunch_excluded (per spec: the offset calculation
-    # is independent of the exclusion toggle).
-    actual_lunch_minutes = sum(
-        round(_session_hours(s, e) * 60)
-        for s, e, t in completed
-        if t == "Lunch"
-    )
-
     active_start = None
     active_hours = 0.0
     active_task = None
@@ -410,9 +401,18 @@ def _build_day_status(now: datetime | None = None) -> DayStatus:
         except ValueError:
             active_hours = 0.0
 
-    # Promark range computed from filtered sessions + lunch offset.
+    # A Lunch session counts as "logged" whether it is still running or
+    # already closed — in both cases the break is no longer merely projected.
+    lunch_logged = any(
+        task == "Lunch" for _id, _start, _end, task in today_sessions
+    )
+
+    # Promark range: when lunch is the employee's own time the contractual
+    # break is baked into the day span as a flat addition, regardless of the
+    # actual Lunch session length.
+    lunch_addition = lunch_duration if lunch_excluded else 0
     pm_start, pm_end = promark_entry(
-        filtered, total_hours, lunch_offset, actual_lunch_minutes
+        filtered, total_hours, lunch_addition
     ) if filtered else (None, None)
 
     return DayStatus(
@@ -425,6 +425,9 @@ def _build_day_status(now: datetime | None = None) -> DayStatus:
         active_task=active_task,
         promark_start=pm_start,
         promark_end=pm_end,
+        lunch_excluded=lunch_excluded,
+        lunch_duration_minutes=lunch_duration,
+        lunch_logged=lunch_logged,
     )
 
 

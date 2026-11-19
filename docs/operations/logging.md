@@ -106,16 +106,40 @@ crash.
 
 ## Decisions
 
-- **`TimedRotatingFileHandler(when='W0')`** — Python's standard library handles
-  Monday midnight rotation natively; no custom scheduling is needed.
-- **File only, no console** — the Textual TUI owns the terminal. A `StreamHandler`
-  to stdout/stderr would corrupt the TUI display.
-- **`backupCount=8`** — ~2 months of history with negligible disk use for a
-  plain-text log produced by a single daily-use application.
-- **Central `logger.py`** — all modules call `get_logger(__name__)` from a single
-  module. This prevents duplicate handler registration and keeps configuration
-  in one place.
+**2026 — `TimedRotatingFileHandler(when='W0')`**
+- Decision: Weekly rotation at Monday midnight via the standard library.
+- Rejected: A custom rotation scheduler.
+- Driver: `Technical` — the standard handler does this natively.
 
-## Related Features
+**2026 — File only, no console handler**
+- Decision: Logs are written to file exclusively.
+- Rejected: An additional `StreamHandler` to stdout/stderr.
+- Driver: `Technical` — the Textual TUI owns the terminal; console output
+  corrupts the display.
 
-- [SQLite datasource](sqlite-datasource.md) — database layer that logging covers for errors
+**2026 — `backupCount=8`**
+- Decision: Eight rotated files are retained (~2 months).
+- Rejected: Longer retention or compression.
+- Driver: `Preference` — plain text from a single daily-use application uses
+  negligible disk, and older logs have never been needed.
+
+**2026 — Central `logger.py`**
+- Decision: All modules call `get_logger(__name__)` from one module.
+- Rejected: Per-module logging configuration.
+- Driver: `Technical` — prevents duplicate handler registration and keeps
+  configuration in one place.
+
+**2026 — Logs in `logs/` relative to the project root**
+- Decision: A fixed, non-configurable log directory beside the source.
+- Rejected: Placing logs in `%APPDATA%` beside the database.
+- Driver: `Preference` — logs are read during development, where being next
+  to the code is more convenient than being correct for an installed app.
+
+---
+
+## Related Documents
+
+- [Documentation Index](../index.md)
+- [Software Standard](software-standard.md) — coding and database conventions
+- [SQLite Datasource](../detailed-design/sqlite-datasource.md) — the database layer whose errors are logged
+- [Architecture](../design/architecture.md) — where `logger.py` sits in the module map

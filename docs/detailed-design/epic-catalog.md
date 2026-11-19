@@ -141,6 +141,36 @@ Example layout:
 
 ---
 
+## Decisions
+
+**2026 — `(Misc)` is virtual, not a stored Epic**
+- Decision: Unlinked tasks are grouped under `(Misc)` at query time.
+- Rejected: Creating a real `Misc` Epic row and linking tasks to it.
+- Driver: `Technical` — a stored row would appear in `epic list` and could be
+  renamed or linked to, making "unclassified" look like a classification.
+
+**2026 — The modal fires at most once per task**
+- Decision: After a `task_catalog` entry exists, the modal never reappears for
+  that task — including when `Esc` was used.
+- Rejected: Prompting again for tasks still unlinked.
+- Driver: `Preference` — a prompt that returns after being dismissed trains
+  the user to dismiss it reflexively.
+
+**2026 — Epics cannot be deleted or re-linked**
+- Decision: No `epic remove`, and a task's Epic link is permanent.
+- Rejected: Full CRUD on the catalog.
+- Driver: `Technical` — deletion or re-linking retroactively changes every
+  historical summary. Deferred until the correct semantics are decided.
+
+**2026 — Task–Epic linking happens at point of use**
+- Decision: The modal appears when an unknown task is first used in `start`,
+  `resume`, or `task`.
+- Rejected: A separate catalog-management screen.
+- Driver: `Preference` — categorisation performed later is categorisation not
+  performed.
+
+---
+
 ## Notes
 
 - `(Misc)` is a virtual group — it is not stored in the database and does not
@@ -152,10 +182,12 @@ Example layout:
 
 ---
 
-## Related Features
+## Related Documents
 
-- `docs/commands.md` — full command reference including `epic add`, `epic list`,
-  `epic summary`, and the updated `start`, `resume`, and `task` descriptions
-- `docs/tui.md` — Epic Summary overlay layout and keyboard navigation
-- `docs/sqlite-datasource.md` — `epics`, `epics_h`, `task_catalog`, and
-  `task_catalog_h` table schemas
+- [Documentation Index](../index.md)
+- [Commands](commands.md) — `epic add`, `epic list`, `epic summary`, and the
+  `start`, `resume`, and `task` descriptions
+- [SQLite Datasource](sqlite-datasource.md) — `epics`, `epics_h`,
+  `task_catalog`, and `task_catalog_h` table schemas
+- [User Interface Design](../design/user-interface-design.md) — Weekly Overview
+  overlay and Task–Epic modal layout

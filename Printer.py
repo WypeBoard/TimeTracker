@@ -31,6 +31,10 @@ class DayStatus:
     active_task: str | None = None
     promark_start: str | None = None
     promark_end: str | None = None
+    # Lunch context — see features/completed/lunch-configuration.md.
+    lunch_excluded: bool = True             # lunch is the employee's own time
+    lunch_duration_minutes: int = 30        # contractual lunch length
+    lunch_logged: bool = False              # a Lunch session exists today
 
     @property
     def total_so_far(self) -> float:
@@ -39,6 +43,41 @@ class DayStatus:
     @property
     def remaining(self) -> float:
         return self.target_hours - self.total_so_far
+
+
+def leave_projection(
+    status: DayStatus,
+    now: datetime,
+) -> tuple[str | None, str | None]:
+    """Return (leave_time, leave_time_with_lunch) as HH:MM strings.
+
+    ``leave_time`` is when the daily target is met if work continues
+    uninterrupted from ``now``. It is None when no session is active or the
+    target has already been reached — projecting forward from a past moment
+    would be misleading.
+
+    ``leave_time_with_lunch`` is ``leave_time`` plus the configured lunch
+    duration. It is only returned when lunch is excluded from working hours
+    (the break is the employee's own time, so it pushes the day's end back)
+    **and** no Lunch session has been logged yet. Once lunch is logged its
+    cost is already reflected in the elapsed clock time, so the second
+    projection disappears — "projected until logged".
+    """
+    if not status.active_start or status.remaining <= 0:
+        return None, None
+
+    leave_min = now.hour * 60 + now.minute + int(status.remaining * 60)
+    leave = _fmt_minutes(leave_min)
+
+    if status.lunch_excluded and not status.lunch_logged and status.lunch_duration_minutes:
+        return leave, _fmt_minutes(leave_min + status.lunch_duration_minutes)
+    return leave, None
+
+
+def _fmt_minutes(total_minutes: int) -> str:
+    """Format a minutes-since-midnight value as HH:MM (wrapping past 24h)."""
+    h, m = divmod(total_minutes, 60)
+    return f"{h % 24:02d}:{m:02d}"
 
 
 # ── internal helpers ─────────────────────────────────────────────────────────
@@ -146,17 +185,14 @@ def build_status_group(
             f"\n  [{_C_OK}]✅  Target reached — {-remaining:.2f}h over[/{_C_OK}]"
         ))
     elif status.active_start:
-        leave_min  = now.hour * 60 + now.minute + int(remaining * 60)
-        leave_h, leave_m = divmod(leave_min, 60)
+        leave, leave_with_lunch = leave_projection(status, now)
         leave_line = (
             f"\n  [{_C_WARN}]⏳  Remaining [bold]{remaining:.2f}h[/bold][/{_C_WARN}]"
-            f"   [cyan]🚪  Leave at [bold]{leave_h:02d}:{leave_m:02d}[/bold][/cyan]"
+            f"   [cyan]🚪  Leave at [bold]{leave}[/bold][/cyan]"
         )
-        if not status.sessions:  # only this one active session — show lunch variant
-            lunch_min  = leave_min + 30
-            lunch_h, lunch_m = divmod(lunch_min, 60)
+        if leave_with_lunch:
             leave_line += (
-                f"   [dim]([/dim][magenta]with lunch [bold]{lunch_h:02d}:{lunch_m:02d}[/bold][/magenta][dim])[/dim]"
+                f"   [dim]([/dim][magenta]w/e lunch [bold]{leave_with_lunch}[/bold][/magenta][dim])[/dim]"
             )
         rows.append(Text.from_markup(leave_line))
     elif not status.active_start and (status.sessions or show_progress):

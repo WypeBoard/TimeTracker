@@ -7,7 +7,11 @@ Displayed values (feature `ui-layout-redesign.md` §6):
   week (e.g. ``1.6h/2.8h``). The weekly remainder is the weekly target
   minus the week total so far — see the **Week** entry below for how the
   weekly target is derived.
-- **Leave** — projected leave time (same calc as the CLI status panel).
+- **Leave** — projected leave time. When lunch is configured as the
+  employee's own time and no ``Lunch`` session has been logged yet, two
+  projections are shown: ``~15:00 / ~15:30 (w/e lunch)`` — the second
+  assumes the configured lunch break is still to be taken. See
+  ``features/completed/lunch-configuration.md``.
 - **Week** — total logged hours / weekly target for the current ISO week
   (Mon–Sun). The weekly target is ``daily_target × number_of_days_with_registration``
   — e.g. by Wednesday of a week with three registered days the target is
@@ -30,7 +34,9 @@ class QuickStatsPanel(Static):
     QuickStatsPanel {
         border: solid $accent;
         padding: 0 1;
-        width: 32;
+        /* Wide enough for the longest row:
+           "Leave     ~15:00 / ~15:30 (w/e lunch)" = 36 columns + padding. */
+        width: 40;
         margin-left: 1;
     }
     """
@@ -77,16 +83,21 @@ def _remaining_str(remaining: float, week_remaining: float) -> str:
 
 
 def _leave_str(status, now: datetime) -> str:
-    """Same leave-time algorithm as ``Printer.build_status_group``.
+    """Render the leave projection, optionally with the lunch variant.
 
-    Only meaningful when a session is currently active — otherwise the
-    projection would extrapolate the clock forward from a past moment.
+    Delegates the calculation to ``Printer.leave_projection`` so the TUI and
+    the CLI status view can never drift apart. When lunch is the employee's
+    own time and none has been logged yet, both projections are shown:
+    ``~15:00 / ~15:30 (w/e lunch)``.
     """
-    if not status.active_start or status.remaining <= 0:
+    from Printer import leave_projection
+
+    leave, leave_with_lunch = leave_projection(status, now)
+    if leave is None:
         return "—"
-    leave_min = now.hour * 60 + now.minute + int(status.remaining * 60)
-    h, m = divmod(leave_min, 60)
-    return f"~{h:02d}:{m:02d}"
+    if leave_with_lunch is None:
+        return f"~{leave}"
+    return f"~{leave}/~{leave_with_lunch} (w/ lunch)"
 
 
 def _compute_week_total(day_status) -> tuple[float, int]:
