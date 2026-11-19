@@ -1,8 +1,11 @@
 """TuiAppContext — AppContext implementation for the Textual TUI.
 
 Delivers command feedback to the OutputPanel widget and triggers panel
-refreshes after mutating commands. The show_log method pushes the LogScreen
-overlay; show_promark writes the Promark panel directly to OutputPanel.
+refreshes after mutating commands. The show_log and show_epic_summary
+methods both push the WeeklyOverviewScreen overlay — the UI layout
+redesign (`features/completed/ui-layout-redesign.md`) collapsed the former
+LogScreen and EpicSummaryScreen into a single view. show_promark writes
+the Promark panel directly to OutputPanel.
 
 The TYPE_CHECKING guard on the TimeTrackerApp import breaks the circular
 import chain: TimeTrackerApp imports TuiAppContext, and TuiAppContext needs
@@ -46,8 +49,11 @@ class TuiAppContext:
         pass
 
     def show_log(self, week_days: dict, week_num: int, year: int) -> None:
-        from app.LogScreen import LogScreen
-        self._app.push_screen(LogScreen(week_num, year))
+        # The typed `log` command still routes here; it now opens the same
+        # Weekly Overview overlay bound to the [w] key. week_days is unused
+        # — the overlay queries by (week_num, year) directly.
+        from app.WeeklyOverviewScreen import WeeklyOverviewScreen
+        self._app.push_screen(WeeklyOverviewScreen(week_num, year))
 
     def show_promark(self, promark_entries: list, week_num: int, year: int) -> None:
         from Printer import build_promark_panel
@@ -60,9 +66,14 @@ class TuiAppContext:
         self._app.push_screen(EpicModal(task_id))
 
     def show_epic_summary(self, week_num: int, year: int) -> None:
-        """Push the EpicSummaryScreen overlay."""
-        from app.EpicSummaryScreen import EpicSummaryScreen
-        self._app.push_screen(EpicSummaryScreen(week_num, year))
+        """Push the WeeklyOverviewScreen overlay.
+
+        The typed `epic summary` command now opens the same overlay as the
+        `[w]` key binding — the previous separate ``EpicSummaryScreen`` was
+        collapsed into the Weekly Overview during the UI layout redesign.
+        """
+        from app.WeeklyOverviewScreen import WeeklyOverviewScreen
+        self._app.push_screen(WeeklyOverviewScreen(week_num, year))
 
     def show_config(self) -> None:
         """Push the ConfigScreen overlay."""

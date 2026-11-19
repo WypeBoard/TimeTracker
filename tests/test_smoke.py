@@ -582,8 +582,14 @@ def test_epic_summary_empty_week(db):
     assert year == today_iso.year
 
 
-def test_epic_summary_excludes_sessions_without_task(db):
-    """Sessions with no task label are not included in the epic summary."""
+def test_epic_summary_includes_sessions_without_task(db):
+    """Sessions with no task label are included and grouped under (Misc).
+
+    Previously these were filtered out at the SQL level, which made
+    untagged work invisible in the Weekly Overview even though those
+    minutes had actually been tracked. The fix keeps them in the result
+    with an empty ``task_id`` — the printer renders it as ``(no task)``.
+    """
     from EpicStorage import get_epic_summary_data
 
     today = date.today()
@@ -598,7 +604,11 @@ def test_epic_summary_excludes_sessions_without_task(db):
     )
 
     data = get_epic_summary_data(week_num, year)
-    assert data == [], "Sessions with no task should not appear in epic summary data"
+    assert len(data) == 1, f"Expected 1 row, got {len(data)}: {data}"
+    date_str, epic_name, task_id, minutes = data[0]
+    assert epic_name is None, "Untagged sessions should be under (Misc) — i.e. None"
+    assert task_id == "", "Empty task label should be preserved as an empty string"
+    assert minutes == 120
 
 
 # ---------------------------------------------------------------------------
@@ -758,3 +768,170 @@ def test_build_day_status_reads_target_from_settings(db):
     assert status.target_hours == 8.0, (
         f"Expected target 8.0h from settings, got {status.target_hours}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Lunch configuration — features/completed/lunch-configuration.md
+# ---------------------------------------------------------------------------
+
+def test_lunch_duration_defaults_to_30(db):
+    """A fresh database reports the documented 30-minute default."""
+    from SettingsStorage import SettingsRepository
+
+    assert SettingsRepository().get_lunch_duration_minutes() == 30
+
+
+def test_lunch_duration_migrates_retired_promark_offset(db):
+    """A non-zero legacy promark offset is reused as the lunch duration."""
+    from SettingsStorage import SettingsRepository
+
+    repo.execute(
+        "INSERT INTO settings (key, value, updated_at) "
+        "VALUES ('lunch_promark_offset_minutes', '45', '2026-01-01T00:00:00')"
+    )
+    assert SettingsRepository().get_lunch_duration_minutes() == 45
+
+
+def test_day_span_always_reserves_full_lunch(db):
+    """A 20-minute lunch is still registered as the configured 30 minutes."""
+    from Promark import compute_day_promark
+
+    sessions = [
+        ("08:00", "12:00", "WORK"),   # 4h
+        ("12:00", "12:20", "Lunch"),  # actual lunch: 20 min
+        ("12:20", "16:00", "WORK"),   # 3h40
+    ]
+    consolidated, _ = compute_day_promark(
+        sessions, always_separate_tasks=[], lunch_excluded=True,
+        lunch_duration_minutes=30,
+    )
+    # 7h40 worked + a flat 30 min lunch => 08:00 → 16:10.
+    assert consolidated["start"] == "08:00"
+    assert consolidated["end"] == "16:10", (
+        f"Expected a flat 30-minute lunch in the span, got {consolidated['end']}"
+    )
+
+
+def test_day_span_reserves_lunch_even_when_none_logged(db):
+    """The contractual break is reserved regardless of whether lunch was taken."""
+    from Promark import compute_day_promark
+
+    consolidated, _ = compute_day_promark(
+        [("08:00", "12:00", "WORK")], always_separate_tasks=[],
+        lunch_excluded=True, lunch_duration_minutes=30,
+    )
+    assert consolidated["end"] == "12:30"
+
+
+def test_day_span_has_no_lunch_addition_when_lunch_is_paid(db):
+    """Lunch included in working hours means no addition to the day span."""
+    from Promark import compute_day_promark
+
+    sessions = [
+        ("08:00", "12:00", "WORK"),
+        ("12:00", "12:30", "Lunch"),
+    ]
+    consolidated, _ = compute_day_promark(
+        sessions, always_separate_tasks=[], lunch_excluded=False,
+        lunch_duration_minutes=30,
+    )
+    # 4h work + 0.5h paid lunch, no synthetic addition.
+    assert consolidated["end"] == "12:30"
+
+
+def test_leave_projection_shows_lunch_variant_until_logged(db):
+    """Both projections are shown while lunch is own time and not yet logged."""
+    from datetime import datetime
+    from Printer import leave_projection
+
+    today = date.today().strftime("%Y-%m-%d")
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '08:00', NULL, 'WORK')",
+        (today,),
+    )
+    now = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+    status = _build_day_status(now)
+
+    leave, leave_with_lunch = leave_projection(status, now)
+    assert leave is not None
+    assert leave_with_lunch is not None, "w/e lunch variant must be shown"
+    assert _minutes(leave_with_lunch) - _minutes(leave) == 30
+
+
+def test_leave_projection_drops_lunch_variant_once_logged(db):
+    """Once a Lunch session exists the second projection disappears."""
+    from datetime import datetime
+    from Printer import leave_projection
+
+    today = date.today().strftime("%Y-%m-%d")
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '12:00', '12:30', 'Lunch')",
+        (today,),
+    )
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '12:30', NULL, 'WORK')",
+        (today,),
+    )
+    now = datetime.now().replace(hour=13, minute=0, second=0, microsecond=0)
+    status = _build_day_status(now)
+
+    _leave, leave_with_lunch = leave_projection(status, now)
+    assert leave_with_lunch is None, "lunch is logged — no projected break remains"
+
+
+def test_leave_projection_has_no_lunch_variant_when_lunch_is_paid(db):
+    """Paid lunch never pushes the leave time back."""
+    from datetime import datetime
+    from Printer import leave_projection
+    from SettingsStorage import SettingsRepository
+
+    SettingsRepository().set_lunch_excluded(False)
+
+    today = date.today().strftime("%Y-%m-%d")
+    repo.execute(
+        "INSERT INTO sessions (date, start, end, task) VALUES (?, '08:00', NULL, 'WORK')",
+        (today,),
+    )
+    now = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+
+    _leave, leave_with_lunch = leave_projection(_build_day_status(now), now)
+    assert leave_with_lunch is None
+
+
+def _minutes(hhmm: str) -> int:
+    """Helper: convert 'HH:MM' into minutes since midnight."""
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+# ---------------------------------------------------------------------------
+# Settings — corrupt task lists must not be silently overwritten
+# ---------------------------------------------------------------------------
+
+def test_corrupt_task_list_is_reported_not_silently_emptied(db):
+    """An unreadable stored list is flagged so Save can refuse to overwrite it."""
+    from SettingsStorage import SettingsRepository
+
+    repo.execute(
+        "INSERT INTO settings (key, value, updated_at) "
+        "VALUES ('excluded_tasks', '[Lunch]', '2026-01-01T00:00:00')"
+    )
+    settings = SettingsRepository()
+    assert settings.get_excluded_tasks() == []
+    assert settings.has_corrupt_task_lists(), (
+        "corrupt JSON must be distinguishable from an empty list"
+    )
+
+
+def test_valid_task_list_round_trips(db):
+    """A saved task list is read back unchanged and is not flagged as corrupt."""
+    from SettingsStorage import SettingsRepository
+
+    settings = SettingsRepository()
+    settings.set_excluded_tasks(["commute", "coffee walk"])
+    settings.set_always_separate_tasks(["Doctor"])
+
+    reloaded = SettingsRepository()
+    assert reloaded.get_excluded_tasks() == ["commute", "coffee walk"]
+    assert reloaded.get_always_separate_tasks() == ["Doctor"]
+    assert not reloaded.has_corrupt_task_lists()

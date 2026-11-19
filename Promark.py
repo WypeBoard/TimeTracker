@@ -10,10 +10,14 @@ How Promark works:
   Promark does not record actual session timestamps. It computes a single
   synthetic time range per day:
     start = first session start of the day
-    end   = start + stacked_hours + lunch_offset_addition
+    end   = start + stacked_hours + lunch_addition
 
-  Sessions are treated as if back-to-back regardless of gaps. The lunch
-  offset addition is max(0, expected_lunch_minutes - actual_lunch_minutes).
+  Sessions are treated as if back-to-back regardless of gaps. When lunch is
+  excluded from working hours, lunch_addition is a flat
+  lunch_duration_minutes — the day is always registered as containing exactly
+  the configured lunch break, no matter how long the actual Lunch session was
+  (or whether one was logged at all). See
+  features/completed/lunch-configuration.md.
 """
 from datetime import datetime, timedelta
 
@@ -49,18 +53,16 @@ def _session_minutes(start: str, end: str) -> int:
 def promark_entry(
     sessions: list,
     total_hours: float,
-    lunch_promark_offset_minutes: int = 0,
-    actual_lunch_minutes: int = 0,
+    lunch_addition_minutes: int = 0,
 ) -> tuple[str | None, str | None]:
     """Return (first_start, promark_end) as HH:MM strings.
 
-    Promark end = first_start + total_hours + lunch_offset_addition,
-    where lunch_offset_addition = max(0, lunch_promark_offset_minutes
-                                       - actual_lunch_minutes).
+    Promark end = first_start + total_hours + lunch_addition_minutes.
 
-    This models the expectation that a lunch break of a fixed duration is
-    invisible in Promark: if the user took less lunch than the configured
-    offset, the shortfall is added to the synthetic end time.
+    The addition is applied verbatim — the caller decides whether a lunch
+    break should be baked into the day span. This models the registration
+    requirement that a day always contains the contractual lunch break of a
+    fixed length, independent of the actual break taken.
 
     Returns (None, None) if sessions is empty.
 
@@ -68,20 +70,15 @@ def promark_entry(
         sessions: Filtered sessions (start, end, task) used for start time.
                   The first session's start is the Promark start.
         total_hours: Pre-computed sum of hours from the filtered sessions.
-        lunch_promark_offset_minutes: Expected lunch duration (from settings).
-                                      Default 0 disables the offset.
-        actual_lunch_minutes: Actual Lunch session duration on this day,
-                              computed from ALL sessions regardless of the
-                              lunch_excluded setting. Default 0.
+        lunch_addition_minutes: Minutes added to the synthetic end time.
+                                0 disables the addition.
     """
     if not sessions:
         return None, None
 
-    promark_addition = max(0, lunch_promark_offset_minutes - actual_lunch_minutes)
-
     first_start = _parse_hhmm(sessions[0][0])   # sessions are (start, end, task)
     total_minutes = round(total_hours * 60)
-    promark_end = first_start + timedelta(minutes=total_minutes + promark_addition)
+    promark_end = first_start + timedelta(minutes=total_minutes + lunch_addition_minutes)
     return _fmt_hhmm(first_start), _fmt_hhmm(promark_end)
 
 
@@ -89,7 +86,7 @@ def compute_day_promark(
     all_day_sessions: list,
     always_separate_tasks: list[str],
     lunch_excluded: bool,
-    lunch_promark_offset_minutes: int,
+    lunch_duration_minutes: int,
 ) -> tuple[dict | None, list[dict]]:
     """Partition a day's sessions into consolidated and always-separate Promark rows.
 
@@ -101,21 +98,23 @@ def compute_day_promark(
         separate_rows: [{"task": str, "hours": float}, ...], one entry per
             distinct always-separate task name in order of first appearance.
 
-    Processing order (per feature spec):
+    Processing order:
       1. Partition sessions into always-separate and normal pools.
-      2. Compute actual_lunch_minutes from the normal pool (before filtering
-         Lunch), regardless of the lunch_excluded setting.
-      3. If lunch_excluded: remove Lunch sessions from the normal pool.
-      4. Run the consolidated entry on remaining normal sessions.
-         Apply promark_addition = max(0, offset - actual_lunch_minutes).
-      5. For each distinct always-separate task: emit one standalone row.
-      6. If no normal sessions remain, consolidated is None.
+      2. If lunch_excluded: remove Lunch sessions from the normal pool, and
+         add a flat lunch_duration_minutes to the consolidated day span.
+         If lunch is included in working hours, Lunch sessions are counted
+         like any other session and no addition is made.
+      3. Run the consolidated entry on the remaining normal sessions.
+      4. For each distinct always-separate task: emit one standalone row.
+      5. If no normal sessions remain, consolidated is None.
 
     Args:
         all_day_sessions: All closed sessions for the day as (start, end, task).
         always_separate_tasks: Task names that produce standalone Promark rows.
-        lunch_excluded: If True, remove Lunch sessions from the normal pool.
-        lunch_promark_offset_minutes: Expected lunch duration for offset calc.
+        lunch_excluded: If True, remove Lunch sessions from the normal pool
+                        and bake the configured lunch break into the span.
+        lunch_duration_minutes: Contractual lunch length, added flat when
+                                lunch_excluded is True.
     """
     # ── Step 1: partition into always-separate and normal ──────────────
     normal_sessions: list[tuple] = []
@@ -132,32 +131,29 @@ def compute_day_promark(
         else:
             normal_sessions.append((start, end, task))
 
-    # ── Step 2: compute actual_lunch_minutes from normal pool ───────────
-    # "regardless of the lunch_excluded setting" — per feature spec.
-    actual_lunch_minutes = sum(
-        _session_minutes(s, e)
-        for s, e, t in normal_sessions
-        if t == "Lunch"
-    )
-
-    # ── Step 3: optionally remove Lunch from the normal pool ───────────
+    # ── Step 2: lunch handling ─────────────────────────────────────────
+    # The addition is flat and unconditional: a 20-minute lunch is still
+    # registered as the configured duration, and a day with no logged Lunch
+    # session still reserves it. Per features/completed/lunch-configuration.md.
     if lunch_excluded:
         normal_sessions = [(s, e, t) for s, e, t in normal_sessions if t != "Lunch"]
+        lunch_addition = lunch_duration_minutes
+    else:
+        lunch_addition = 0
 
-    # ── Step 4: compute consolidated entry from remaining normal sessions
+    # ── Step 3: compute consolidated entry from remaining normal sessions
     if normal_sessions:
         normal_hours = sum(_session_minutes(s, e) / 60.0 for s, e, _ in normal_sessions)
         pm_start, pm_end = promark_entry(
             normal_sessions,
             normal_hours,
-            lunch_promark_offset_minutes,
-            actual_lunch_minutes,
+            lunch_addition,
         )
         consolidated: dict | None = {"start": pm_start, "end": pm_end, "hours": normal_hours}
     else:
         consolidated = None
 
-    # ── Step 5: build separate rows list ────────────────────────────────
+    # ── Step 4: build separate rows list ────────────────────────────────
     separate_rows = [
         {"task": t, "hours": separate_by_task[t]}
         for t in separate_order

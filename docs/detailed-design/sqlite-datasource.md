@@ -133,10 +133,14 @@ Known keys and their defaults (when the key is absent):
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `daily_work_target_hours` | decimal string | `"7.4"` | Daily work target in hours |
-| `lunch_excluded` | `"true"` / `"false"` | `"true"` | Whether Lunch sessions are excluded from hours total |
-| `lunch_promark_offset_minutes` | integer string | `"0"` | Expected lunch duration for the Promark offset |
+| `lunch_excluded` | `"true"` / `"false"` | `"true"` | Whether lunch is the employee's own time (excluded from hours total) |
+| `lunch_duration_minutes` | integer string | `"30"` | Contractual lunch length, used for the day span and the leave projection |
 | `excluded_tasks` | JSON array of strings | `"[]"` | Task identifiers excluded from hours totals |
 | `always_separate_tasks` | JSON array of strings | `"[]"` | Task identifiers appearing as standalone Promark rows |
+
+Retired key: `lunch_promark_offset_minutes` is no longer written. A non-zero
+value is read once as the lunch duration when `lunch_duration_minutes` has
+never been written; the row itself is left untouched.
 
 Defaults are encoded in `SettingsStorage.SettingsRepository` — the application
 works correctly with an empty `settings` table.
@@ -230,6 +234,55 @@ setup is required.
 
 ---
 
+## Decisions
+
+**2025 — SQLite replaces the Excel workbook**
+- Decision: Sessions are stored in a local SQLite database.
+- Rejected: The `.xlsx` workbook driven by `openpyxl`.
+- Driver: `Technical` — ACID writes, SQL querying, no third-party dependency,
+  and no file lock when the workbook happens to be open.
+
+**2025 — Database in `%APPDATA%`, not beside the source**
+- Decision: `%APPDATA%\TimeTracker\timetracker.db`.
+- Rejected: A file in the working directory or repository.
+- Driver: `Technical` — keeps real working-time data out of version control
+  and survives moving or reinstalling the application.
+
+**2025 — Week numbers derived, never stored**
+- Decision: ISO week is computed from `date` at query time.
+- Rejected: Storing a week column.
+- Driver: `Technical` — a stored week is a second source of truth that can
+  disagree with the date it came from.
+
+**2025 — Times stored as local `HH:MM` text**
+- Decision: `start` and `end` are local wall-clock strings; only audit
+  timestamps are UTC.
+- Rejected: UTC or epoch storage with conversion on read.
+- Driver: `Business` — the values are compared against a local working day
+  and a local payroll system. Storing what the user typed removes an entire
+  class of conversion bugs.
+
+**2025 — `IF NOT EXISTS` DDL instead of versioned migrations**
+- Decision: `create_schema()` runs on every startup and is idempotent.
+- Rejected: A migration framework with a schema version table.
+- Driver: `Technical` — single-user, single-machine, additive-only schema so
+  far. This will need revisiting on the first destructive schema change.
+
+**2026 — `settings.updated_at` local, `h_timestamp` UTC**
+- Decision: The two timestamps are deliberately different.
+- Rejected: Making both UTC for consistency.
+- Driver: `Preference` — `updated_at` is a human-readable "last edited" value
+  read directly by the user; `h_timestamp` is forensic and must be absolute.
+
+**2026 — Retired setting keys are read but never rewritten**
+- Decision: `lunch_promark_offset_minutes` is read once as a fallback and
+  otherwise left untouched.
+- Rejected: Deleting or migrating the row.
+- Driver: `Technical` — leaving it preserves the audit trail and avoids a
+  one-off migration path for a single key.
+
+---
+
 ## Notes
 
 - `h_timestamp` in `sessions_h` is stored in UTC. User-visible times
@@ -242,8 +295,11 @@ setup is required.
 
 ---
 
-## Related Features
+## Related Documents
 
-- `commands.md` — documents all CLI commands that read/write session data.
-- `docs/epic-catalog.md` — Epic Catalog feature: Epics and task–Epic linking.
-- `docs/configuration.md` — configuration screen and the settings table.
+- [Documentation Index](../index.md)
+- [Commands](commands.md) — all commands that read or write session data
+- [Epic Catalog](epic-catalog.md) — Epics and task–Epic linking
+- [Configuration](configuration.md) — the settings table in use
+- [Software Standard](../operations/software-standard.md) — table, history, and trigger conventions
+- [Architecture](../design/architecture.md) — the layering this schema sits behind

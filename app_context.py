@@ -49,7 +49,8 @@ class AppContext(Protocol):
     def on_session_changed(self) -> None:
         """Signal that session data has changed.
 
-        TUI: triggers a refresh of the Today and Week panels.
+        TUI: triggers a refresh of the cockpit panels (Active Session,
+        Quick Stats, Today's Timeline).
         Tests: increments a counter for assertion.
         """
         ...
@@ -57,7 +58,7 @@ class AppContext(Protocol):
     def on_day_stopped(self, status: DayStatus) -> None:
         """Signal that the last session of the day has been closed.
 
-        TUI: no-op (the Today panel already shows live data).
+        TUI: no-op (the cockpit panels already show live data).
         Tests: no-op (not relevant for smoke tests).
         """
         ...
@@ -65,7 +66,7 @@ class AppContext(Protocol):
     def show_log(self, week_days: dict, week_num: int, year: int) -> None:
         """Display a full week log.
 
-        TUI: pushes the LogScreen overlay.
+        TUI: pushes the Weekly Overview overlay (same overlay as [w]).
         Tests: records the call arguments for assertion.
         """
         ...
@@ -99,7 +100,7 @@ class AppContext(Protocol):
     def show_epic_summary(self, week_num: int, year: int) -> None:
         """Display the Epic summary overlay for the given ISO week.
 
-        TUI: pushes the EpicSummaryScreen overlay.
+        TUI: pushes the Weekly Overview overlay (same overlay as [w]).
         Tests: records the call arguments for assertion.
         """
         ...

@@ -83,8 +83,12 @@ lunch 1200
   (or now) before the Lunch session is opened — no separate `pause` is needed.
 - Lunch sessions are **never** linked to an Epic — the Task–Epic modal does not
   appear.
-- Whether Lunch sessions count toward the daily working-hours target is
-  controlled by the **Lunch** section of the configuration screen.
+- Whether Lunch sessions count toward the daily working-hours target, and how
+  long the contractual break is, are controlled by the **Lunch** section of
+  the configuration screen.
+- While lunch is configured as your own time and no Lunch session has been
+  logged yet, the Quick Stats `Leave` row shows both projections —
+  `~15:00 / ~15:30 (w/e lunch)`. Logging lunch removes the second figure.
 
 Output example (when a session was already running):
 
@@ -164,7 +168,8 @@ Output:
 
 ### `status`
 
-Refreshes the Today panel immediately. Does not write to the Output panel.
+Refreshes the cockpit panels (Active Session, Quick Stats, Today's
+Timeline) immediately. Does not write to the Output panel.
 
 ```
 status
@@ -238,45 +243,36 @@ Output example:
 
 ### `epic summary [wNN]`
 
-Opens the Epic Summary overlay showing time grouped by Epic for the target
-week. Defaults to the current week; `wNN` selects a specific ISO week number.
+Opens the Weekly Overview overlay for the target week. Defaults to the
+current week; `wNN` selects a specific ISO week number. The overlay shows
+time grouped day → Epic → task with both `HH:MM` and decimal duration
+columns on every row.
 
 ```
 epic summary
 epic summary w26
 ```
 
-See [Epic Summary overlay](#epic-summary-overlay) in `docs/tui.md` for the
-full layout and navigation reference.
+Same overlay as the `[w]` key binding and the `log` command — see
+[Weekly Overview overlay](../design/user-interface-design.md#weekly-overview-overlay).
 
 ---
 
 ### `log [wNN]`
 
-Opens the Log overlay showing the full week of sessions with task labels,
-daily totals, and a week total. Defaults to the current week; `wNN` selects a
-specific ISO week number.
+Opens the Weekly Overview overlay showing hours grouped day → Epic → task
+for the target week. Defaults to the current week; `wNN` selects a specific
+ISO week number.
 
 ```
 log
 log w23
 ```
 
-Output example:
-
-```
-╭─ 📅  Week 24, 2026  (Jun 09 – Jun 13) ─────────────────────╮
-│   Mon  #1  08:30–16:15  7.42h  Epic-42                       │
-│   Tue  #1  08:45–12:00  3.25h  Epic-42                       │
-│        #2  12:30–16:30  4.00h  Epic-11                       │
-│            daily total  7.25h                                 │
-│   Wed  —                                                      │
-│   Thu  —                                                      │
-│   Fri  —                                                      │
-│                                                               │
-│   Week total:  14.67h                                         │
-╰───────────────────────────────────────────────────────────────╯
-```
+Same overlay as the `[w]` key binding and the `epic summary` command. The
+previous individual-session log format has been retired — see
+[Weekly Overview overlay](../design/user-interface-design.md#weekly-overview-overlay)
+for the current format.
 
 > **Year-boundary note:** `wNN` is resolved against the current year. Week 1
 > at the turn of the year may be ambiguous. This is a known edge case.
@@ -298,10 +294,13 @@ The table applies the following settings (configured via the `config` screen):
 - **Always-separate tasks**: listed tasks appear as standalone rows (hours only,
   no synthetic time range) instead of being merged into the consolidated day
   entry.
-- **Lunch excluded**: if enabled, Lunch sessions are removed from the normal
-  session pool before computing the consolidated start/end range.
-- **Promark offset**: if set, `max(0, offset_minutes − actual_lunch_minutes)`
-  is added to the consolidated day's synthetic end time.
+- **Lunch excluded from working hours**: `Lunch` sessions are removed from the
+  normal session pool, and the configured **lunch duration** is added to the
+  consolidated day's end time instead. The addition is flat — a day is always
+  registered with the full configured break, regardless of how long the actual
+  `Lunch` session was, or whether one was logged at all.
+- **Lunch included in working hours**: `Lunch` sessions count like any other
+  session and nothing is added to the day span.
 
 Sessions tagged as excluded tasks (from the configuration screen) are still
 included in the Promark output — exclusion only affects hours totals and
@@ -319,7 +318,7 @@ config
 
 Alternative: press `Ctrl+,`.
 
-See `docs/configuration.md` for full reference.
+See [Configuration](configuration.md) for full reference.
 
 ---
 
@@ -329,6 +328,49 @@ See `docs/configuration.md` for full reference.
   is not yet handled.
 - Weekend sessions (Saturday, Sunday) are stored in the database but `log`
   only displays Mon–Fri.
+
+---
+
+## Decisions
+
+**2026 — One task per session**
+- Decision: A session carries exactly one task label. Switching task means
+  `pause` → `start <epic>`, or `resume` followed by `task`.
+- Rejected: Multiple task labels or a split-session command.
+- Driver: `Business` — time must be attributable to a single task for
+  registration; a split would require inventing a division rule.
+
+**2026 — `lunch` auto-closes the running session**
+- Decision: `lunch` closes any open session before opening the Lunch session.
+- Rejected: Requiring `pause` first.
+- Driver: `Preference` — the two-step form was the most frequent command pair
+  of the day and nothing else could reasonably be intended.
+
+**2026 — `lunch` never prompts for an Epic**
+- Decision: Lunch sessions bypass the Task–Epic modal entirely.
+- Rejected: Treating `Lunch` as an ordinary task.
+- Driver: `Business` — lunch is not project work and must never be linked to
+  an Epic.
+
+**2026 — `resume` skips non-work tasks when carrying forward**
+- Decision: `resume` carries the last task that is not `Lunch`, not excluded,
+  and not always-separate.
+- Rejected: Carrying the immediately preceding session's task.
+- Driver: `Preference` — the preceding session is almost always the break the
+  user is returning from.
+
+**2026 — `status` writes nothing to Output**
+- Decision: `status` refreshes the cockpit panels silently.
+- Rejected: Printing a status block to Output.
+- Driver: `Preference` — the panels already show the information; printing it
+  would push real command results out of a three-line Output panel.
+
+**2026 — Excluded tasks still appear in Promark output**
+- Decision: Exclusion affects hours totals and progress only, not Promark rows.
+- Rejected: Omitting excluded tasks from Promark entirely.
+- Driver: `Business` — the registration system needs the full day span; the
+  exclusion exists to keep personal time out of the *target*, not out of the
+  record.
 
 ---
 
@@ -343,9 +385,10 @@ See `docs/configuration.md` for full reference.
 
 ---
 
-## Related Features
+## Related Documents
 
-- `docs/sqlite-datasource.md` — database schema and storage layer
-- `docs/tui.md` — TUI usage and keybinding reference
-- `docs/epic-catalog.md` — Epic Catalog: managing Epics and the task–Epic modal
-- `docs/configuration.md` — configuration screen: settings and their effects
+- [Documentation Index](../index.md)
+- [SQLite Datasource](sqlite-datasource.md) — database schema and storage layer
+- [Configuration](configuration.md) — settings and their effects
+- [Epic Catalog](epic-catalog.md) — managing Epics and the task–Epic modal
+- [User Interface Design](../design/user-interface-design.md) — layout and keyboard reference

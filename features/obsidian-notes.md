@@ -275,12 +275,17 @@ New file written to `{vault_path}/epics/{sanitised_epic_name}.md`:
 
 ### Read-only Opgave panel
 
-- A new `OpgavePanel` widget is always present in the TUI layout, between the top
-  panel row (`TodayPanel` / `WeekPanel`) and `TaskSummaryPanel`.
-- The panel uses `height: 1fr` and takes the remaining vertical space.
+- The existing `TaskNotesPanel` widget (currently a static placeholder introduced by
+  the UI layout redesign — see `features/completed/ui-layout-redesign.md`) is wired up
+  as the read-only Opgave view. No new panel is added and no layout reshuffle is
+  needed.
+- In the cockpit layout, `TaskNotesPanel` sits directly below `TodaysTimelinePanel`
+  and above `OutputPanel`. It already uses `height: 1fr` and fills the remaining
+  vertical space.
 - The panel is **always read-only**. No input, no edit mode.
 - **No user action is needed to show the panel** — it appears automatically whenever a
   session with a task is active. The user does not configure or toggle it.
+- The panel's `border_title` remains `Task Notes`.
 
 #### Content displayed
 
@@ -300,7 +305,12 @@ New file written to `{vault_path}/epics/{sanitised_epic_name}.md`:
 #### Refresh behaviour
 
 The panel refreshes on the same hook as all other session panels
-(`refresh_session_panels()` in `TimeTrackerApp`). It does not watch the file system.
+(`TimeTrackerApp.refresh_session_panels()`, invoked via
+`TuiAppContext.on_session_changed()`). It does not watch the file system.
+
+Note: the current `TaskNotesPanel` placeholder is static and is explicitly excluded
+from `refresh_session_panels()`. Implementing this feature will add the panel to that
+refresh path.
 
 ### Dependency
 
@@ -654,31 +664,35 @@ future feature.
 
 #### Panel placement
 
-The Opgave panel sits between the top panel row (`TodayPanel` / `WeekPanel`) and the
-`TaskSummaryPanel`, taking all remaining vertical space that is not claimed by other
-panels. In the layout diagram:
+The Opgave view is rendered inside the existing `TaskNotesPanel`, which the UI layout
+redesign already reserved for this feature (currently a static placeholder). In the
+cockpit layout it sits between `TodaysTimelinePanel` and `OutputPanel`, taking all
+remaining vertical space via `height: 1fr`:
 
 ```
-┌─ Header ─────────────────────────────────────────────┐
-│  ┌─ Today ──────────────────┐  ┌─ Week ─────────────┐ │
-│  │                          │  │                    │ │
-│  └──────────────────────────┘  └────────────────────┘ │
-│  ┌─ Opgave ───────────────────────────────────────────┐│   ← NEW
-│  │  EVD-4325 — Payment gateway refactor               ││
-│  │  ## Opgave  [content]                              ││
-│  │  ## Tasks   [content]                              ││
-│  │  ## Accept  [content]                              ││
-│  └───────────────────────────────────────────────────┘│
-│  ┌─ Task Summary ─────────────────────────────────────┐│
-│  │  ...                                               ││
-│  └───────────────────────────────────────────────────┘│
-│  ┌─ Progress ─────────────────────────────────────────┐│
-│  │  ...                                               ││
-│  └───────────────────────────────────────────────────┘│
-│  ┌─ Output ───────────────────────────────────────────┐│
-│  └───────────────────────────────────────────────────┘│
-│  > command input                                       │
-└─ Footer ──────────────────────────────────────────────┘
+┌─ TimeTracker ───────────────────────────────────────────────────────────┐
+│  ┌─ Active Session ────────────────┐  ┌─ Quick Stats ──────┐            │
+│  │  TASK-4321                      │  │  Today   5.8h/7.4h │            │
+│  │  Epic: Platform Ops             │  │  Rem.    1.6h      │            │
+│  │  Running 02:37:14  Started 09:00│  │  Leave  ~15:42     │            │
+│  └─────────────────────────────────┘  │  Week   31.2h      │            │
+│                                       │  Sessions 3        │            │
+│                                       └────────────────────┘            │
+│  ┌─ Today's Timeline ─────────────────────────────────────────────────┐  │
+│  │  #1  07:00 – 08:30  TASK-1111  1.5h                                │  │
+│  │  #3  09:00 – Now    TASK-4321  2.6h  ▶                             │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│  ┌─ Task Notes ───────────────────────────────────────────────────────┐  │   ← wired up
+│  │  EVD-4325 — Payment gateway refactor                               │  │
+│  │  ## Opgave  [content]                                              │  │
+│  │  ## Tasks   [content]                                              │  │
+│  │  ## Accept  [content]                                              │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│  ┌─ Output ───────────────────────────────────────────────────────────┐  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│  > command input                                                         │
+│  [w] Weekly Overview  [ctrl+q] Quit                                      │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 The panel uses `height: 1fr` to fill the available space.
@@ -706,9 +720,10 @@ The `## breadcrumb navigation` section is structural metadata and is not shown.
 
 #### Update behaviour
 
-The panel refreshes whenever the active session changes (same hook as `refresh_session_panels()`
-in `TimeTrackerApp`). It does not poll or watch the file system — it re-reads the file
-on demand.
+The panel refreshes whenever the active session changes (same hook as
+`TimeTrackerApp.refresh_session_panels()`, invoked via
+`TuiAppContext.on_session_changed()`). It does not poll or watch the file system — it
+re-reads the file on demand.
 
 #### Write access
 
@@ -746,6 +761,20 @@ time comes. Key concerns that will need to be addressed then:
 ---
 
 ## Manual Changes
+
+2026-08-21 (revision 7 — UI alignment after cockpit redesign)
+- The UI layout redesign (`features/completed/ui-layout-redesign.md`) has landed.
+  It removed `TodayPanel`, `WeekPanel`, `TaskSummaryPanel`, and `ProgressStrip`, and
+  introduced `ActiveSessionPanel`, `QuickStatsPanel`, `TodaysTimelinePanel`, and a
+  static `TaskNotesPanel` placeholder that was reserved explicitly for this feature.
+- Feature doc updated so that the "read-only Opgave panel" is no longer a new
+  widget (`OpgavePanel`) — it is the wiring-up of the existing `TaskNotesPanel`.
+- Layout diagrams updated to match the current cockpit (Active Session + Quick Stats
+  top row, then Today's Timeline, Task Notes, Output, command input).
+- Refresh hook clarified: `TimeTrackerApp.refresh_session_panels()`, invoked via
+  `TuiAppContext.on_session_changed()`. The current `TaskNotesPanel` is excluded from
+  that hook because it is static; implementing this feature will add it.
+- No design decisions changed — only references to the UI were realigned.
 
 2026-07-29 (revision 6 — OQ 11 & OQ 12 resolved)
 - OQ 11 resolved: hard-code default subfolder names for v1 (`tasks/` and `epics/`
