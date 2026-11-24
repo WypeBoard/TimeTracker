@@ -2,6 +2,8 @@
 
 Status: Documented
 
+Archived 2026-11-24 — superseded by features/standalone-web-app.md; TUI is being retired, see Manual Changes 2026-11-23.
+
 ## Purpose
 
 Capture runtime events, warnings, and errors to persistent log files so that

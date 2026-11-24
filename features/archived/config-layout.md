@@ -2,6 +2,8 @@
 
 Status: Brainstorming
 
+Archived 2026-11-24 — superseded by features/standalone-web-app.md; TUI is being retired, see Manual Changes 2026-11-23.
+
 ## Purpose
 
 Allow the user to choose a preferred TUI layout density (e.g. compact vs. comfortable) and have that preference persist across application restarts.

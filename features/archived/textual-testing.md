@@ -2,6 +2,8 @@
 
 Status: Brainstorming
 
+Archived 2026-11-24 — superseded by features/standalone-web-app.md; TUI is being retired, see Manual Changes 2026-11-23.
+
 ## Purpose
 
 Establish a pattern for writing automated tests that exercise Textual TUI widgets, screens, and user interactions — beyond what the current `RecordingContext` + SQLite integration tests can cover.

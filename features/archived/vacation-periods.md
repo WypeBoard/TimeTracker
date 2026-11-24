@@ -2,6 +2,8 @@
 
 Status: Brainstorming
 
+Archived 2026-11-24 — superseded by features/standalone-web-app.md; TUI is being retired, see Manual Changes 2026-11-23.
+
 ## Purpose
 
 Allow the user to register planned vacation periods in the local datasource so the application can reason about them — for example, to cross-check that an upcoming or active vacation has also been submitted through official channels (Outlook calendar).

@@ -2,6 +2,8 @@
 
 Status: Documented
 
+Archived 2026-11-24 — superseded by features/standalone-web-app.md; TUI is being retired, see Manual Changes 2026-11-23.
+
 ## Purpose
 
 Provide a persistent, user-editable configuration layer that lets the user control application behaviour without touching code. The most immediate needs are:

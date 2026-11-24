@@ -2,6 +2,8 @@
 
 Status: Brainstorming
 
+Archived 2026-11-24 — superseded by features/standalone-web-app.md; TUI is being retired, see Manual Changes 2026-11-23.
+
 ## Purpose
 
 Remind the user when no active time tracking session is running, by periodically sending a Windows toast notification. This prevents untracked work time going unnoticed.

@@ -2,6 +2,8 @@
 
 Status: Brainstorming
 
+Archived 2026-11-24 — superseded by features/standalone-web-app.md; TUI is being retired, see Manual Changes 2026-11-23.
+
 ## Purpose
 
 Rethink the full command set for a TUI-first world.
