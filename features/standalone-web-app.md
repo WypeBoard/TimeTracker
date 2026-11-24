@@ -1,6 +1,6 @@
 # Feature: Standalone Browser Application
 
-Status: Brainstorming
+Status: Refinement
 
 ## Purpose
 
@@ -10,26 +10,130 @@ The browser application will be a fully standalone application in relation to th
 
 ## Next Step
 
-> **Current status:** Brainstorming
-> **To reach Refinement:** Decide the initial web technology, browser interaction model, process startup method, and migration boundary.
+> **Current status:** Refinement
+> **To reach Proposed:** Settle on a concrete UI layout (dashboard/subpages/modals) and translate the requirements below into a specific page/route inventory and component list.
 
 ## Requirements
 
-_Not yet defined — brainstorm only._
+- Web stack: FastAPI + Uvicorn, server-rendered with Jinja2 templates, enhanced with HTMX for partial-page updates. (Jinja2 is required regardless of HTMX, since it is how FastAPI response data is injected into HTML.)
+- Frontend assets: Bootstrap and jQuery. Referencing them via CDN is acceptable during active development, but before this feature is considered complete and merged via pull request, they must be converted to static files vendored locally in the repo. No Node.js, no TypeScript, no frontend build tooling, no package manager for JS at any stage.
+- The web application is an independent process from the TUI:
+  - New independent web service functions are written for the web app instead of reusing `Commands.py`/`*Storage.py`/`AppContext`.
+  - The only code shared between the TUI and the web app is the `db/` package (generic SQLite infrastructure).
+  - `web/` (or equivalent package) must not import from `app/`, and `app/` must not import from `web/`.
+- The web app and TUI may run concurrently against the same SQLite database; no in-memory caching of session/epic state across requests — each request reads fresh from SQLite.
+- Access model: plain `http://127.0.0.1:<port>/` URL, bound to loopback only. No authentication. Standard browser same-origin navigation (no special CORS handling needed since there is no cross-origin caller).
+- Startup: manual for now. Acceptable minimal options are a `.bat` file or a Startup-folder shortcut; no Task Scheduler/service wrapper design needed at this stage.
+- The user opens/pins the browser tab manually; the app does not need to auto-launch a browser.
+- UI shape is not yet finalized: expect to prototype one layout, get it in front of the user, and refactor the UI more than once before settling. The final shape may combine a dashboard with modals and/or dedicated subpages — this will be decided in a follow-up UI design pass before moving to Proposed.
+- Logging/diagnostics: not a concern for this feature; use whatever baseline logging the rest of the app already has.
 
 ## Non-Goals
 
-_Not yet defined._
+- No database replacement or migration; SQLite remains the store for the web app. Any future replacement of SQLite (and the associated transition plan) is explicitly a separate feature.
+- No authentication/authorization layer.
+- No CDN-hosted or npm/yarn-managed frontend dependencies in the merged/completed feature; a CDN reference is an acceptable temporary convenience during active development but must be replaced with vendored static assets before the feature is considered done and merged via pull request. No frontend build pipeline regardless.
+- No automatic process supervision (Task Scheduler/Windows service) design as part of this feature.
+- No automatic browser launching.
+- No reuse of `Commands.py`, `*Storage.py`, or `AppContext`/`TuiAppContext` by the web app; no shared UI code between TUI and web app beyond `db/`.
+- Command-history-style interaction is not an explicit goal for the web UI.
 
 ## Manual Changes
 
-_(none yet)_
+2026-11-19
+- The standalone FastAPI application must use the existing SQLite database and must not create a second database or perform a project/new-repository migration.
+- Sharing database initialization/schema knowledge is an accepted cross-boundary concern. It does not require the TUI and web applications to share UI or runtime code.
+- The exact location of shared schema initialization remains to be decided, but it must not accidentally couple either application to the other's implementation package.
+
+2026-11-23
+- The TUI is considered transitional, not a permanent second interface. Once the web application is complete and covers the required workflows, the user does not intend to open the TUI again, and the entire TUI codebase (`app/` TUI modules and any TUI-only entry points) is expected to be deleted.
+- Until the web application reaches that point, the TUI remains the only working interface and must stay functional and unbroken.
+
+2026-11-24 — Resolution of initial Open Questions
+- Web technology: FastAPI + Uvicorn + Jinja2 + HTMX, confirmed. Jinja2 is required independent of the HTMX decision, since it is the mechanism for injecting FastAPI response data into HTML.
+- Frontend assets: Bootstrap and jQuery, as previously decided. CDN references are acceptable during development; must be swapped for locally vendored static assets before the feature is completed/merged.
+- Process startup/supervision: out of scope for now; a `.bat` file or Startup-folder shortcut is sufficient. No Task Scheduler or service wrapper design needed yet.
+- Browser interaction model: the user manually opens and pins the tab; the app does not auto-launch a browser.
+- Concurrency with the TUI: every mutating action is NOT required to work with guaranteed correctness while the TUI is running simultaneously at this stage — see the 2026-11-23 manual change above; the TUI is transitional and will eventually be deleted, so long-term dual-write concurrency hardening is not a goal of this feature.
+- Code sharing: the web app uses independent web service functions; it does not reuse `Commands.py`/`*Storage.py`/`AppContext`. The only shared code between TUI and web app is `db/`.
+- UI shape: deliberately left open. The page/route/modal structure will be decided through iterative prototyping and refactoring with the user before the feature can move to Proposed.
+- Access/security model: standard loopback URL access, no authentication, no special CORS handling — this is a fully isolated local application.
+- Environment: Python and pip package installation are both permitted, so no constrained-environment workarounds are needed.
+- Database replacement: explicitly deferred to a separate future feature, which must also define the TUI-to-web transition. SQLite is expected to remain sufficient indefinitely for this local, single-user, fully isolated application.
+- Logging/diagnostics: not a concern for this feature.
+
 
 ## Documentation Plan
 
 _To be defined when the feature reaches Proposed._
 
 ## Brainstorm Notes
+
+### 2026-11-19 — Repository separation and clean root
+
+The repository layout is to be redesigned so future TUI and web entry points start from a much cleaner separation:
+
+- `TimeTracker.py` remains the only Python entry module in the repository root.
+- All other existing application modules move into `app/`.
+- `db/` is the only shared lower-level package.
+- The TUI and web application must remain separate applications and must not import from one another.
+- The two applications may share data through the existing SQLite file, but they may not share TUI/web UI classes or entry-point code.
+
+This requires a move of the following domain modules out of the root:
+
+- `Commands.py`
+- `Storage.py`
+- `EpicStorage.py`
+- `SettingsStorage.py`
+- `Promark.py`
+- `Printer.py`
+- `Constants.py`
+- `logger.py`
+- `app_context.py`
+
+The existing TUI modules already under `app/` remain TUI-owned. The standalone web application will receive its own package beneath or alongside `app/`, with no dependency on the TUI package.
+
+#### The `db/` boundary
+
+The phrase "the only shared code should be `db/`" is important. `db/` should contain only generic SQLite mechanics:
+
+- database connection lifecycle
+- generic read/write/query helpers
+- query type or result helpers
+- database path configuration or path resolution, if it contains no TimeTracker domain rules
+- optional generic migration infrastructure
+
+`db/` must not contain TimeTracker domain logic or schema knowledge such as the names and columns of `sessions`, `epics`, `task_catalog`, or `settings`.
+
+The `CREATE TABLE IF NOT EXISTS` and trigger declarations are domain/schema code, not generic SQLite infrastructure. Therefore they must not be placed in `db/` merely to make it available to both applications. A shared TimeTracker schema module outside `db/` would violate the "only shared code is `db/`" boundary unless `db/` is intentionally allowed to contain domain-specific initialization.
+
+The cleanest interpretation is that `db/` remains generic and each standalone application owns its own initialization and schema setup. Because both applications initially use the same existing database, the web application should use the TUI-created schema rather than create a duplicate schema in its own startup path. If a future shared schema is necessary, it should become an explicitly separate shared domain package, with that boundary approved instead of silently placing domain information in `db/`.
+
+This interpretation is the preferred baseline for the feature brainstorm. It gives both applications an independent runtime and leaves `db/` truly reusable infrastructure.
+
+#### Proposed package shape
+
+```text
+TimeTracker.py         — local entry/bootstrap module only
+app/
+    tui/               — existing Textual application and TUI presentation
+    web/               — standalone FastAPI/Jinja application
+    domain/            — if required, shared command/storage behavior
+    legacy root modules? — none, after the migration
+ db/                   — generic SQLite infrastructure only
+```
+
+The exact names and package shape remain to be refined. In particular, no decision has been made about whether existing `Commands.py` and `*Storage.py` modules should be moved unchanged, wrapped into shared domain services, or rewritten to serve only the web application.
+
+#### Migration implications
+
+- Moving root modules is a structural refactor and must not silently change application behavior.
+- Existing imports and tests must be updated consistently.
+- The TUI must remain runnable after the move.
+- The web application must have its own entry module and must not import `app.tui.*`.
+- The existing database file and data remain unchanged.
+- No database replacement or migration is needed for this structural phase.
+- A schema initialization review is required before implementation so `db/` does not acquire domain-specific tables or triggers.
 
 ### 2026-11-19 — Standalone web application
 
@@ -89,6 +193,18 @@ If a replacement database is approved in the future, migration requirements shou
 - Pin the application URL in the browser rather than creating an installed desktop application.
 - Keep all browser assets local; do not rely on CDNs.
 - The application may open the browser automatically on startup, but the browser need not be kept open for the service to run.
+
+### 2026-11-20 — Server availability indication
+
+The browser UI should tell the user when FastAPI is unavailable:
+
+- `/health` is the preferred lightweight availability endpoint.
+- `/alivecheck` may be used only if it fits an existing project convention.
+- FastAPI's default documentation route is not an availability endpoint.
+- The browser should check `/health` immediately on page load and approximately every 5 minutes afterward.
+- Checks should use a short timeout and show a clear persistent status or notification when the server is down.
+- The browser should not attempt to start a process or execute a Windows script.
+- Subprocess execution remains separate future ProjectOrganizer functionality.
 
 ### UI ideas
 
@@ -190,32 +306,187 @@ Rejected for now:
 - Initial duplication or migration would complicate the standalone application.
 - A PWA is a future interface option, not the initial architecture.
 
-## Open Questions
+> **Update 2026-11-23:** The TUI is intended to be transitional and deleted once the web application is complete (see Manual Changes). This removes the "forever" framing of the duplication risk above — there would be no long-lived second interface to keep in sync, only a finite migration window. That weakens, but does not eliminate, the Spring Boot objection: the web app would still need a full from-scratch reimplementation effort during that window, with no shared test suite to prove behavioural equivalence with the TUI before it is retired. The FastAPI path remains preferable mainly because it can import the existing Python modules directly and avoid re-implementing the domain at all, not merely because it avoids indefinite duplication.
 
-1. Should HTMX be used, or should the first version use Jinja2 and plain JavaScript only?
-2. Should browser assets be vendored with the application or loaded through an approved package mechanism?
-3. Should FastAPI and Uvicorn be launched through Task Scheduler, the Startup folder, or a dedicated Windows service wrapper?
-4. Should the browser open automatically at login, or should the user open/pin the URL manually?
-5. Is every mutating action required to work while the TUI is running simultaneously?
-6. Should the web application reuse `Commands.py` through a web context, extract shared command services, or create independent web service functions?
-7. Should the web UI expose one dashboard page and overlays/modals, or begin with multiple normal pages?
-8. Is workplace browser policy compatible with a local HTTP URL and client-side JavaScript?
-9. Is Python package installation already permitted, or does startup need to use an existing virtual environment or installed runtime?
-10. Is authentication required even for loopback-only access, or is OS-process isolation considered sufficient?
-11. When, if ever, should the SQLite database be replaced, and should that decision be handled as a separate feature?
-12. What level of logging and on-screen diagnostics is expected for a background service?
+## Open Questions (resolved 2026-11-24)
 
-## Future Ideas
+All items below were answered on 2026-11-24; see the Manual Changes entry for that date and the Requirements/Non-Goals sections. Retained here only as a historical record of the original question list.
 
-- Add a browser notification or in-page toast for reminders.
-- Add a live timer that updates without a full page request.
-- Add keyboard shortcuts mirroring the TUI command bar.
-- Add a responsive mobile layout for a local phone browser, but not before the Windows workflow is stable.
-- Add a migration script for a future database replacement.
-- Add service health reporting in Windows or an application tray icon.
-- Add an optional local API if it is useful outside the Jinja-rendered interface.
+1. ~~Should HTMX be used, or should the first version use Jinja2 and plain JavaScript only?~~ Resolved: HTMX + Jinja2.
+2. ~~Should browser assets be vendored or loaded via a package mechanism?~~ Resolved: Bootstrap/jQuery vendored locally.
+3. ~~Task Scheduler, Startup folder, or service wrapper?~~ Resolved: not important now; `.bat`/Startup-folder shortcut is enough.
+4. ~~Auto-open browser or manual pin?~~ Resolved: user pins the tab manually.
+5. ~~Is every mutating action required to work while the TUI runs simultaneously?~~ Resolved: No — see 2026-11-23 manual change (TUI is transitional).
+6. ~~Reuse `Commands.py`, extract shared services, or independent web functions?~~ Resolved: independent web service functions; only `db/` is shared.
+7. ~~One dashboard with overlays, or multiple pages?~~ Resolved: to be redefined via iterative UI prototyping — may combine modals and/or subpages.
+8. ~~Workplace browser policy compatibility?~~ Resolved: standard URL-based access assumed fine.
+9. ~~Is Python/pip installation permitted?~~ Resolved: yes, fully permitted.
+10. ~~Is authentication required for loopback-only access?~~ Resolved: doesn't matter — fully isolated local app.
+11. ~~When should SQLite be replaced?~~ Resolved: separate future feature; SQLite expected sufficient indefinitely.
+12. ~~Logging/diagnostics level?~~ Resolved: not relevant for this feature.
 
-## Next Step
+### 2026-11-19 — Browser UI template exploration
 
-> **Current status:** Brainstorming
-> **To reach Refinement:** Review the open questions, select the smallest feasible initial architecture, and remove ideas that are not required for the first browser workflow.
+The browser version should translate the existing feature set rather than copy the TUI visually. It should cover, in the initial scope:
+
+- Active session and running timer
+- Start, lunch, pause, resume, stop, and restart actions
+- Task/Epic assignment and Epic creation/linking
+- Today's timeline
+- Quick work-hour statistics
+- Task notes
+- Command/action feedback
+- Weekly Overview
+- Promark-style output
+- Configuration settings
+
+The following templates are layout alternatives for the primary dashboard. They do not yet make decisions about routing, HTMX/plain JavaScript, page count, or visual styling.
+
+##### Template 1 — Persistent cockpit
+
+```text
+┌──────────────────────────── TimeTracker ─────────────────────────────┐
+│ [Today] [Week] [Epic Summary] [Promark]             [Settings]       │
+├──────────────────────────────────┬─────────────────────────────────┤
+│ ACTIVE SESSION                   │ QUICK STATS                     │
+│ TASK-4321                         │ Today  5.8h / 7.4h              │
+│ Epic: Platform Ops                │ Rem.   1.6h                     │
+│ Running 02:37:14                  │ Leave  ~15:42                   │
+│ [Pause] [Stop] [Restart]          │ Week   31.2h / 37.0h            │
+├──────────────────────────────────┴─────────────────────────────────┤
+│ TODAY'S TIMELINE                                                   │
+│ 07:00–08:30  TASK-1111  1.5h                                       │
+│ 08:30–09:00  TASK-2222  0.5h                                       │
+│ 09:00–Now    TASK-4321  2.6h  ▶                                   │
+├────────────────────────────────────────────────────────────────────┤
+│ TASK NOTES                                                         │
+│ [notes for the active task]                                        │
+├────────────────────────────────────────────────────────────────────┤
+│ FEEDBACK                                                           │
+│ ✓ Session started: TASK-4321 at 09:00                              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- Closest to the existing TUI and lowest conceptual risk.
+- Keeps the full day at a glance.
+- May feel tall and cramped on laptop screens unless the timeline and feedback sections scroll independently.
+- Best fit if the browser should act like a pinned dashboard.
+
+##### Template 2 — Browser app shell
+
+```text
+┌ Sidebar  ────────────────┬────────────────────── Main surface ───────┐
+│ TimeTracker             │  Thursday, 19 November              │
+│                         │                                      │
+│ ● Today                 │  ┌ Active Session ───────────────┐  │
+│   Weekly                │  │ TASK-4321 · 02:37:14          │  │
+│   Epic Summary          │  │ [Pause] [Stop] [Restart]       │  │
+│   Promark               │  └───────────────────────────────┘  │
+│                         │                                      │
+│ Settings                │  [Timeline]  [Notes]  [Feedback]     │
+│                         │  07:00–08:30  TASK-1111              │
+│                         │  08:30–09:00  TASK-2222              │
+│                         │  09:00–Now    TASK-4321  ▶           │
+│                         │                                      │
+│                         │  5.8h today · 1.6h left              │
+└─────────────────────────────┴──────────────────────────────────────────────┘
+```
+
+- Gives normal browser navigation clearer structure than one permanent dashboard.
+- Keeps the active session and primary actions close to the top.
+- The Today view can still contain most of the TUI dashboard panels.
+- Adds side navigation and separate route/state decisions.
+- Strong general-purpose option for desktop-first use.
+
+##### Template 3 — Timeline-first workbench
+
+```text
+┌──────────────────────────── TimeTracker ─────────────────────────────┐
+│ ┌ ACTIVE TASK ─────────────────────────────┐  ┌ QUICK ────────────┐ │
+│ │ TASK-4321  02:37:14                      │  │ 5.8h / 7.4h       │ │
+│ │ Platform Ops                             │  │ ~15:42 leave      │ │
+│ │ [Start task] [Lunch] [Pause] [Stop]      │  │ 31.2h week        │ │
+│ └─────────────────────────────────────────┘  └───────────────────┘ │
+├────────────────────────────────────────────────────────────────────┤
+│ Timeline                                    [Add] [Edit] [Weekly] │
+│                                                                     │
+│ 09:00 ───────────────────────── Now                                 │
+│        Platform Ops · TASK-4321                                     │
+│ 08:30 ─ 08:30–09:00 · TASK-2222                                    │
+│ 07:00 ─ 07:00–08:30 · TASK-1111                                    │
+├────────────────────────────────────────────────────────────────────┤
+│ Task notes                               │ Action feedback          │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- Makes the timeline and editing actions the centre of the experience.
+- Good foundation for correcting session history and Epic/task assignment.
+- Session editing is an adjacent but not necessarily required initial workflow.
+- Visually more modern and less terminal-like than Template 1.
+- Requires careful responsive behaviour for the two-column action areas.
+
+##### Template 4 — Card-and-modal dashboard
+
+```text
+┌──────────────────────────── TimeTracker ─────────────────────────────┐
+│ [Today] [Weekly] [Epic Summary] [Promark] [Settings]                 │
+├─────────────────────────────────────────────────────────────────────┤
+│ ┌ Running 02:37:14 ──────┐ ┌ Today ───┐ ┌ Week ────┐ ┌ Leave ────┐ │
+│ │ TASK-4321              │ │ 5.8h     │ │ 31.2h   │ │ ~15:42    │ │
+│ │ Platform Ops           │ │ /7.4h    │ │ /37.0h  │ │           │ │
+│ └────────────────────────┘ └──────────┘ └──────────┘ └───────────┘ │
+├──────────────────────────────────┬──────────────────────────────────┤
+│ Today                            │ Actions                         │
+│ Timeline rows                    │ [Start] [Lunch] [Pause]         │
+│                                  │ [Resume] [Stop] [Restart]       │
+├──────────────────────────────────┴──────────────────────────────────┤
+│ Epic assignment and configuration open as focused overlays          │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- Friendly, compact, and natural for cards/forms/overlays.
+- Modals work well for Epic creation/linking and configuration.
+- Risk of hiding too much state if overlays are overused.
+- A good candidate if the UI wants to feel less like the TUI and more like a small web application.
+
+##### Template 5 — Focused page-per-purpose
+
+```text
+Today     | Sessions     | Week     | Epics & Tasks     | Promark     | Settings
+
+[Today]
+  Active session hero + primary actions
+  Today's timeline
+
+[Sessions]
+  Search/edit/list of sessions
+
+[Week]
+  Weekly overview and totals
+
+[Epics & Tasks]
+  Epic catalog, task links, and creation
+
+[Promark]
+  Generated output and copy/export-style actions
+
+[Settings]
+  Working hours and application configuration
+```
+
+- Lowest pressure on one dashboard to display every concept.
+- Strongest separation of today, reporting, catalog, output, and configuration.
+- Gives each workflow more screen room and simpler navigation.
+- Requires more routes/pages and risks losing at-a-glance TUI behaviour.
+- Weekly Overview, Epic linking, and Promark become first-class destinations rather than overlays.
+
+#### Cross-template patterns
+
+- Active-session state should remain visually dominant because it is the user's main at-a-glance status.
+- Primary session actions should be directly visible rather than hidden behind a command bar.
+- A command bar is not required in the web UI, but it could exist as an optional convenience or keyboard-accessible command palette.
+- Today, Weekly, Epics/Tasks, Promark, and Settings should exist as coherent destinations even if the final template uses a dashboard with overlays.
+- Task notes and action feedback are useful supporting panels, but should not compete with active-session or timeline controls.
+- Configuration and Epic/task assignment should use explicit labels and form validation, rather than TUI command parsing.
+- Every template should show an explicit idle state, not just an empty card.
+- On small screens, the active session should remain first, followed by primary actions, then the timeline; reports and notes can move below or into separate pages.
