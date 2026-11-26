@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.TimeTrackerApp import TimeTrackerApp
-    from Printer import DayStatus
+    from app.Printer import DayStatus
 
 
 class TuiAppContext:
@@ -56,7 +56,7 @@ class TuiAppContext:
         self._app.push_screen(WeeklyOverviewScreen(week_num, year))
 
     def show_promark(self, promark_entries: list, week_num: int, year: int) -> None:
-        from Printer import build_promark_panel
+        from app.Printer import build_promark_panel
         panel = build_promark_panel(promark_entries, week_num, year)
         self._get_output().write(panel)
 

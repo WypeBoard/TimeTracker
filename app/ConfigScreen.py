@@ -27,7 +27,7 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, RadioButton, RadioSet, Static
 
-from SettingsStorage import SettingsRepository
+from app.SettingsStorage import SettingsRepository
 
 
 class ConfigScreen(ModalScreen):

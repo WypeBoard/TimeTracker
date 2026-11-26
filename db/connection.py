@@ -1,7 +1,7 @@
 import sqlite3
 
 from db.query_type import QueryType
-from logger import get_logger
+from app.logger import get_logger
 
 _log = get_logger(__name__)
 

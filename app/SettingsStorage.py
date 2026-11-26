@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 
 import db.repository as repo
-from logger import get_logger
+from app.logger import get_logger
 
 _log = get_logger(__name__)
 

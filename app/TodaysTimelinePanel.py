@@ -39,7 +39,7 @@ class TodaysTimelinePanel(ScrollableContainer):
         self.set_interval(60, self.refresh_data)
 
     def refresh_data(self) -> None:
-        from Commands import _build_day_status
+        from app.Commands import _build_day_status
 
         status = _build_day_status(datetime.now())
         content = self.query_one("#timeline-content", Static)
@@ -54,7 +54,7 @@ class TodaysTimelinePanel(ScrollableContainer):
 
 
 def _build_timeline_table(status) -> Table:
-    from Commands import _session_hours
+    from app.Commands import _session_hours
 
     table = Table(
         box=box.SIMPLE,

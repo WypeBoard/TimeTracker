@@ -100,7 +100,7 @@ def db(tmp_path, monkeypatch):
     """
     db_path = str(tmp_path / "test.db")
     monkeypatch.setattr("db.repository.DB_FILE", db_path)
-    monkeypatch.setattr("Storage.DB_FILE", db_path)
+    monkeypatch.setattr("app.Storage.DB_FILE", db_path)
     create_schema()
     return db_path
 

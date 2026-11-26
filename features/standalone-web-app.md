@@ -264,6 +264,7 @@ Mechanics:
 - Update `docs/index.md` only if it links directly to any of these files (check first; most links there are expected to point at `docs/*`, not `features/*`).
 - `features/completed/*.md` is untouched — those stay where they are per `AGENTS.md`'s archive rule for completed features.
 - This phase has no code impact and can be done independently of, and before, any other phase.
+- **Status: Done (2026-11-24).** All eleven non-completed `features/*.md` documents listed above were moved to `features/archived/` via `git mv`; `features/completed/` was left untouched; no links to the archived files were found in `docs/index.md`.
 
 ### Phase 1 — Repository restructuring ("clean root")
 
@@ -275,6 +276,7 @@ Per the 2026-11-24 "Correction" Manual Change, this must happen before/alongside
 4. `db/` is not moved; it already sits at the root and stays there as the shared package.
 5. Run the existing test suite (`tests/`) after the move and fix any broken imports. (Per environment constraints, the user runs `pytest`/`mvn`-equivalent commands; this plan only prescribes what must pass, not that the agent executes it.)
 6. No behavior change is permitted in this phase — it is a pure move/import-fix refactor. Any accidental logic change here is a bug, not a feature change.
+- **Status: Done (2026-11-24).** All nine root domain modules were moved into `app/` via `git mv`; every import site across `app/*.py`, `TimeTracker.py`, `tests/app/test_smoke.py`, and `db/*.py` (which also imported `Constants`/`logger` directly) was updated to the `app.`-prefixed form. `db/` itself was left in place. One incidental behavior-preserving fix was required: `app/logger.py`'s `_PROJECT_ROOT` path resolution was adjusted (one extra `os.path.dirname`) so the `logs/` directory still resolves to the repository root instead of `app/logs/` after the move. The test suite (`tests/app/`) was additionally reorganized into a subpackage mirroring `app/`, mirroring the 1:1 app/webapp test boundary that will exist once `webapp/` is added. Full test suite run: `61 passed`.
 
 ### Phase 2 — `webapp/` skeleton
 

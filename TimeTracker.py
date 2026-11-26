@@ -7,8 +7,8 @@ Opens the Textual TUI. All commands are entered from the TUI command bar.
 """
 import sys
 
-from logger import setup_logging, get_logger
-from Storage import create_schema
+from app.logger import setup_logging, get_logger
+from app.Storage import create_schema
 
 _log = get_logger(__name__)
 

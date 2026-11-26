@@ -1,4 +1,4 @@
-"""Central logging configuration for TimeTracker.
+﻿"""Central logging configuration for TimeTracker.
 
 Call `setup_logging()` once at application startup (in TimeTracker.py main()).
 All other modules obtain their logger with:
@@ -21,8 +21,10 @@ import os
 import datetime
 
 # Resolve the logs/ directory relative to this file so the path is stable
-# regardless of which directory the application is launched from.
-_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+# regardless of which directory the application is launched from. This file
+# lives in app/, so go up one level to the repository root before appending
+# logs/, keeping the on-disk location unchanged after the Phase 1 move.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LOG_DIR = os.path.join(_PROJECT_ROOT, "logs")
 _LOG_FILE = os.path.join(_LOG_DIR, "app.log")
 

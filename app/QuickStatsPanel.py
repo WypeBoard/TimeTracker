@@ -49,7 +49,7 @@ class QuickStatsPanel(Static):
         self.set_interval(60, self.refresh_data)
 
     def refresh_data(self) -> None:
-        from Commands import _build_day_status
+        from app.Commands import _build_day_status
 
         now = datetime.now()
         status = _build_day_status(now)
@@ -90,7 +90,7 @@ def _leave_str(status, now: datetime) -> str:
     own time and none has been logged yet, both projections are shown:
     ``~15:00 / ~15:30 (w/e lunch)``.
     """
-    from Printer import leave_projection
+    from app.Printer import leave_projection
 
     leave, leave_with_lunch = leave_projection(status, now)
     if leave is None:
@@ -114,9 +114,9 @@ def _compute_week_total(day_status) -> tuple[float, int]:
     is included); past days are filtered through the same lunch/excluded-task
     rules that ``_build_day_status`` applies.
     """
-    from Storage import read_log
-    from Promark import session_hours
-    from SettingsStorage import SettingsRepository
+    from app.Storage import read_log
+    from app.Promark import session_hours
+    from app.SettingsStorage import SettingsRepository
 
     settings = SettingsRepository()
     lunch_excluded = settings.get_lunch_excluded()

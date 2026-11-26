@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from Printer import DayStatus
+    from app.Printer import DayStatus
 
 
 class AppContext(Protocol):

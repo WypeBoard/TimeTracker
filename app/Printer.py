@@ -298,7 +298,7 @@ def build_promark_panel(week_days: dict, week_num: int, year: int) -> Panel:
     Extracted so both print_promark_week() and the TUI OutputPanel can reuse
     the same rendering logic.
     """
-    from Promark import promark_entry
+    from app.Promark import promark_entry
 
     jan4 = date(year, 1, 4)
     week1_monday = jan4 - timedelta(days=jan4.weekday())

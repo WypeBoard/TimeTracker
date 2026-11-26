@@ -1,4 +1,4 @@
-"""CommandInput — the command bar at the bottom of the TUI.
+﻿"""CommandInput — the command bar at the bottom of the TUI.
 
 Accepted commands:
   start [hhmm] [epic]
@@ -102,19 +102,19 @@ class CommandInput(Input):
 
         if command == "log":
             week_str = _parse_week_arg(args[0]) if args else None
-            from Commands import cmd_log
+            from app.Commands import cmd_log
             cmd_log(self._ctx, week_str)
             return
 
         if command == "start":
             time_override, epic = _parse_start_args(args)
-            from Commands import cmd_start
+            from app.Commands import cmd_start
             cmd_start(self._ctx, time_override, epic)
             return
 
         if command in ("pause", "stop", "resume", "restart"):
             time_override = _parse_hhmm(args[0]) if args else None
-            from Commands import cmd_pause, cmd_stop, cmd_resume, cmd_restart
+            from app.Commands import cmd_pause, cmd_stop, cmd_resume, cmd_restart
             if command == "pause":
                 cmd_pause(self._ctx, time_override)
             elif command == "stop":
@@ -137,13 +137,13 @@ class CommandInput(Input):
                 except ValueError:
                     self._ctx.error("⚠  -s requires an integer session number.")
                     return
-            from Commands import cmd_task
+            from app.Commands import cmd_task
             cmd_task(self._ctx, epic, session_num)
             return
 
         if command == "promark":
             week_str = _parse_week_arg(args[0]) if args else None
-            from Commands import cmd_promark
+            from app.Commands import cmd_promark
             cmd_promark(self._ctx, week_str)
             return
 
@@ -153,12 +153,12 @@ class CommandInput(Input):
 
         if command == "lunch":
             time_override = _parse_hhmm(args[0]) if args else None
-            from Commands import cmd_lunch
+            from app.Commands import cmd_lunch
             cmd_lunch(self._ctx, time_override)
             return
 
         if command == "config":
-            from Commands import cmd_config
+            from app.Commands import cmd_config
             cmd_config(self._ctx)
             return
 
@@ -182,16 +182,16 @@ class CommandInput(Input):
                 self._ctx.error("⚠  Usage: epic add <name>")
                 return
             name = " ".join(rest)
-            from Commands import cmd_epic_add
+            from app.Commands import cmd_epic_add
             cmd_epic_add(self._ctx, name)
 
         elif subcommand == "list":
-            from Commands import cmd_epic_list
+            from app.Commands import cmd_epic_list
             cmd_epic_list(self._ctx)
 
         elif subcommand == "summary":
             week_str = _parse_week_arg(rest[0]) if rest else None
-            from Commands import cmd_epic_summary
+            from app.Commands import cmd_epic_summary
             cmd_epic_summary(self._ctx, week_str)
 
         else:

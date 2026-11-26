@@ -113,7 +113,7 @@ class EpicModal(ModalScreen):
 
     def _populate_list(self) -> None:
         """Fill the ListView with existing Epics plus the creation option."""
-        from EpicStorage import list_epics
+        from app.EpicStorage import list_epics
 
         list_view = self.query_one("#epic-list", ListView)
         list_view.clear()
@@ -136,7 +136,7 @@ class EpicModal(ModalScreen):
 
         # An existing Epic was selected — write the task_catalog entry.
         epic_id = int(item_name)
-        from EpicStorage import link_task_to_epic
+        from app.EpicStorage import link_task_to_epic
         link_task_to_epic(self._task_id, epic_id)
         self.dismiss()
 
@@ -158,7 +158,7 @@ class EpicModal(ModalScreen):
         if not name:
             return
 
-        from EpicStorage import add_epic, link_task_to_epic
+        from app.EpicStorage import add_epic, link_task_to_epic
 
         epic_id = add_epic(name)
         if epic_id is None:

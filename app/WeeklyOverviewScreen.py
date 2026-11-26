@@ -52,11 +52,11 @@ class WeeklyOverviewScreen(ModalScreen):
     def _render_week(self) -> None:
         from datetime import timedelta
 
-        from EpicStorage import get_epic_summary_data
-        from Printer import build_weekly_overview_panel
-        from Promark import compute_day_promark
-        from SettingsStorage import SettingsRepository
-        from Storage import read_log
+        from app.EpicStorage import get_epic_summary_data
+        from app.Printer import build_weekly_overview_panel
+        from app.Promark import compute_day_promark
+        from app.SettingsStorage import SettingsRepository
+        from app.Storage import read_log
 
         settings = SettingsRepository()
         lunch_excluded = settings.get_lunch_excluded()

@@ -39,8 +39,8 @@ class ActiveSessionPanel(Static):
         self.set_interval(1, self.refresh_data)
 
     def refresh_data(self) -> None:
-        from Commands import _build_day_status
-        from EpicStorage import get_task_epic
+        from app.Commands import _build_day_status
+        from app.EpicStorage import get_task_epic
 
         now = datetime.now()
         status = _build_day_status(now)

@@ -1,4 +1,4 @@
-"""Command implementations for TimeTracker.
+﻿"""Command implementations for TimeTracker.
 
 Each public cmd_* function accepts an AppContext as its first argument.
 AppContext abstracts the two things that differ between CLI and TUI mode:
@@ -14,21 +14,21 @@ from __future__ import annotations
 from datetime import datetime, date, timedelta
 from typing import TYPE_CHECKING
 
-from Storage import (
+from app.Storage import (
     open_session, close_session, update_session_task,
     get_open_session, get_today_sessions, read_log,
 )
-from EpicStorage import (
+from app.EpicStorage import (
     add_epic, list_epics, get_task_epic,
 )
-from Promark import promark_entry, compute_day_promark
-from Printer import DayStatus, print_status
-from logger import get_logger
+from app.Promark import promark_entry, compute_day_promark
+from app.Printer import DayStatus, print_status
+from app.logger import get_logger
 
 if TYPE_CHECKING:
     # AppContext is imported only for type checking; at runtime the parameter
     # is duck-typed — any object with the required methods will work.
-    from app_context import AppContext
+    from app.app_context import AppContext
 
 _log = get_logger(__name__)
 
@@ -134,7 +134,7 @@ def cmd_resume(ctx: AppContext, time_override: str | None = None) -> None:
     task forward.
     """
     _log.info("cmd_resume: time_override=%r", time_override)
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     today_sessions = get_today_sessions()  # [(id, start, end, task)]
 
@@ -278,7 +278,7 @@ def cmd_promark(ctx: AppContext, week_str: str | None = None) -> None:
     Builds a list of processed day entries (one per weekday, Mon–Fri) and
     passes the result to ctx.show_promark().
     """
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     days = read_log()
 
@@ -362,7 +362,7 @@ def _build_day_status(now: datetime | None = None) -> DayStatus:
     Reads settings (daily target, lunch handling, excluded tasks) at call
     time. No settings state is cached.
     """
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     now = now or datetime.now()
     today_str = date.today().strftime("%Y-%m-%d")
