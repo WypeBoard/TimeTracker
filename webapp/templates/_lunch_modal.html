@@ -1,0 +1,22 @@
+<div class="modal modal-blur fade" id="lunch-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <form class="modal-content" hx-post="/sessions/lunch" hx-target="#today-dynamic" hx-swap="innerHTML"
+              hx-on::after-request="if(event.detail.successful){bootstrap.Modal.getInstance(document.getElementById('lunch-modal'))?.hide();}">
+            <div class="modal-header">
+                <h5 class="modal-title">Lunch</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Start time</label>
+                    <input type="time" step="300" class="form-control" name="start_time"
+                           value="{{ view.default_start_time }}" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary">Start Lunch</button>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,9 +1,14 @@
+import logging
 import sqlite3
 
 from db.query_type import QueryType
-from app.logger import get_logger
 
-_log = get_logger(__name__)
+# Plain stdlib logging, not app.logger.get_logger: db/ is shared with
+# webapp/ and must not import anything from app/ (see the db/ boundary
+# discussion in features/completed/standalone-web-app.md). Both
+# app.logger.get_logger(name) and this line ultimately just return
+# logging.getLogger(name), so there is no behavior difference for the TUI.
+_log = logging.getLogger(__name__)
 
 
 class Connection:

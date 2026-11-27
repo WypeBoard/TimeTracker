@@ -1,0 +1,5 @@
+# Placeholder so webapp/static/ is tracked by git while empty.
+#
+# Phase 6 of the Implementation Plan in features/standalone-web-app.md
+# vendors Bootstrap/jQuery/HTMX/Tabler static files here, replacing the CDN
+# references currently used in webapp/templates/base.html.

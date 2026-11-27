@@ -1,0 +1,44 @@
+<div class="mb-3 d-flex flex-wrap gap-2">
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#new-session-modal">
+        New Session
+    </button>
+
+    <div class="btn-group">
+        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#resume-modal">
+            Resume
+        </button>
+        <button type="button" class="btn btn-outline-primary dropdown-toggle dropdown-toggle-split"
+                data-bs-toggle="dropdown" aria-expanded="false">
+            <span class="visually-hidden">Toggle Dropdown</span>
+        </button>
+        <div class="dropdown-menu">
+            <a class="dropdown-item" href="#" hx-post="/sessions/resume/now" hx-target="#today-dynamic" hx-swap="innerHTML">Now</a>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#lunch-modal">
+            Lunch
+        </button>
+        <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split"
+                data-bs-toggle="dropdown" aria-expanded="false">
+            <span class="visually-hidden">Toggle Dropdown</span>
+        </button>
+        <div class="dropdown-menu">
+            <a class="dropdown-item" href="#" hx-post="/sessions/lunch/now" hx-target="#today-dynamic" hx-swap="innerHTML">Now</a>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#stop-modal">
+            Stop
+        </button>
+        <button type="button" class="btn btn-outline-danger dropdown-toggle dropdown-toggle-split"
+                data-bs-toggle="dropdown" aria-expanded="false">
+            <span class="visually-hidden">Toggle Dropdown</span>
+        </button>
+        <div class="dropdown-menu">
+            <a class="dropdown-item" href="#" hx-post="/sessions/stop/now" hx-target="#today-dynamic" hx-swap="innerHTML">Now</a>
+        </div>
+    </div>
+</div>

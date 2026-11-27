@@ -1,12 +1,7 @@
 """Unit tests for app.utils helper functions."""
 from __future__ import annotations
 
-import sys
-import os
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.utils import format_hhmm
 

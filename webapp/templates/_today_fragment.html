@@ -1,0 +1,5 @@
+{% if view.error %}
+<div class="alert alert-danger" role="alert">{{ view.error }}</div>
+{% endif %}
+{% include "_quick_stats.html" %}
+{% include "_session_table.html" %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Today - TimeTracker{% endblock %}
+{% block content %}
+    <div class="page-header">
+        <h2 class="page-title">Today</h2>
+    </div>
+
+    {% include "_quick_action_buttons.html" %}
+
+    <div id="today-dynamic">
+        {% include "_today_fragment.html" %}
+    </div>
+
+    {% include "_new_session_modal.html" %}
+    {% include "_resume_modal.html" %}
+    {% include "_lunch_modal.html" %}
+    {% include "_stop_modal.html" %}
+{% endblock %}

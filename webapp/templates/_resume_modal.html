@@ -1,0 +1,31 @@
+<div class="modal modal-blur fade" id="resume-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <form class="modal-content" hx-post="/sessions/resume" hx-target="#today-dynamic" hx-swap="innerHTML"
+              hx-on::after-request="if(event.detail.successful){bootstrap.Modal.getInstance(document.getElementById('resume-modal'))?.hide();}">
+            <div class="modal-header">
+                <h5 class="modal-title">Resume</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Task</label>
+                    <select class="form-select" name="task">
+                        {% for t in view.today_tasks %}
+                        <option value="{{ t }}" {% if t==view.resume_default_task %}selected{% endif %}>{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                    <small class="form-hint">Tasks worked on today only.</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Start time</label>
+                    <input type="time" step="300" class="form-control" name="start_time"
+                           value="{{ view.default_start_time }}" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary">Resume</button>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,51 @@
+<div class="row row-deck row-cards mb-3">
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="subheader">Today</div>
+                <div class="h3 mb-0">{{ "%.1f"|format(view.quick_stats.today_logged) }}h / {{ "%.1f"|format(view.quick_stats.today_target) }}h</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="subheader">Rem.</div>
+                <div class="h3 mb-0">{{ "%.1f"|format(view.quick_stats.today_remaining) }}h / {{ "%.1f"|format(view.quick_stats.week_remaining) }}h</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="subheader">Leave</div>
+                <div class="h3 mb-0">
+                    {% if view.quick_stats.leave %}
+                        ~{{ view.quick_stats.leave }}
+                        {% if view.quick_stats.leave_with_lunch %}
+                            / ~{{ view.quick_stats.leave_with_lunch }} <span class="text-secondary fs-5">(w/ lunch)</span>
+                        {% endif %}
+                    {% else %}
+                        &mdash;
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="subheader">Week</div>
+                <div class="h3 mb-0">{{ "%.1f"|format(view.quick_stats.week_logged) }}h / {{ "%.1f"|format(view.quick_stats.week_target) }}h</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="subheader">Sessions</div>
+                <div class="h3 mb-0">{{ view.quick_stats.sessions_count }}</div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -2,17 +2,20 @@
 
 All direct use of Connection is centralised here so that the rest of the
 codebase never needs to know about the db/ package directly.
-Storage.py calls these helpers; Commands.py calls Storage.py.
+app/Storage.py calls these helpers; app/Commands.py calls app/Storage.py.
+webapp/services/*.py calls these helpers directly instead — see the db/
+boundary discussion in features/completed/standalone-web-app.md for why
+db/ does not import from app/.
 """
+import logging
 import sqlite3
 from typing import Any
 
-from app.Constants import DB_FILE
+from db.config import DB_FILE
 from db.connection import Connection
 from db.query_type import QueryType
-from app.logger import get_logger
 
-_log = get_logger(__name__)
+_log = logging.getLogger(__name__)
 
 
 def execute(query: str, params: tuple[Any, ...] = ()) -> None:

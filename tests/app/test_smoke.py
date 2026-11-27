@@ -16,25 +16,18 @@ capture.
 """
 from __future__ import annotations
 
-import sys
-import os
 from datetime import date, datetime, timedelta
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# sys.path: allow importing from the project root even when pytest is run
-# from a subdirectory.
-# ---------------------------------------------------------------------------
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from Storage import create_schema, get_today_sessions, get_open_session
-from Commands import (
+from app.Storage import create_schema, get_today_sessions, get_open_session
+from app.Commands import (
     cmd_start, cmd_pause, cmd_stop, cmd_resume, cmd_restart,
     cmd_task, cmd_log, cmd_lunch, cmd_config, _build_day_status, _session_hours,
     cmd_epic_add, cmd_epic_list, cmd_epic_summary,
 )
 import db.repository as repo
+
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +230,7 @@ def test_resume_skips_lunch_carries_work_task(db):
 
 def test_resume_skips_excluded_task(db):
     """resume skips sessions whose task is in excluded_tasks."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     ctx = RecordingContext()
     # Mark "commute" as excluded.
@@ -259,7 +252,7 @@ def test_resume_skips_excluded_task(db):
 
 def test_resume_skips_always_separate_task(db):
     """resume skips sessions whose task is in always_separate_tasks."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     ctx = RecordingContext()
     # Mark "Doctor" as always-separate.
@@ -446,7 +439,7 @@ def test_epic_add_duplicate(db):
     assert ctx.warnings, "Should have warned about duplicate name"
     assert "already exists" in ctx.warnings[-1]
 
-    from EpicStorage import list_epics
+    from app.EpicStorage import list_epics
     assert len(list_epics()) == 1, "Only one Epic should exist after the duplicate attempt"
 
 
@@ -471,7 +464,7 @@ def test_on_new_task_triggered_for_unknown_task(db):
 
 def test_on_new_task_not_triggered_for_known_task(db):
     """start with a task already in task_catalog does not call on_new_task."""
-    from EpicStorage import add_epic, link_task_to_epic
+    from app.EpicStorage import add_epic, link_task_to_epic
 
     epic_id = add_epic("Platform")
     link_task_to_epic("TASK-123", epic_id)
@@ -499,7 +492,7 @@ def test_on_new_task_triggered_for_task_command(db):
 
 def test_epic_summary_data_groups_correctly(db):
     """get_epic_summary_data groups known tasks under Epic and unknowns under None."""
-    from EpicStorage import add_epic, link_task_to_epic, get_epic_summary_data
+    from app.EpicStorage import add_epic, link_task_to_epic, get_epic_summary_data
 
     today = date.today()
     week_num = today.isocalendar().week
@@ -541,7 +534,7 @@ def test_epic_summary_data_groups_correctly(db):
 
 def test_epic_summary_named_before_misc(db):
     """get_epic_summary_data returns named Epics before (Misc)."""
-    from EpicStorage import add_epic, link_task_to_epic, get_epic_summary_data
+    from app.EpicStorage import add_epic, link_task_to_epic, get_epic_summary_data
 
     today = date.today()
     week_num = today.isocalendar().week
@@ -590,7 +583,7 @@ def test_epic_summary_includes_sessions_without_task(db):
     minutes had actually been tracked. The fix keeps them in the result
     with an empty ``task_id`` — the printer renders it as ``(no task)``.
     """
-    from EpicStorage import get_epic_summary_data
+    from app.EpicStorage import get_epic_summary_data
 
     today = date.today()
     week_num = today.isocalendar().week
@@ -698,7 +691,7 @@ def test_config_calls_show_config(db):
 
 def test_build_day_status_excludes_lunch_from_hours(db):
     """_build_day_status excludes Lunch from total_hours when lunch_excluded=True."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     today = date.today().strftime("%Y-%m-%d")
     # Work session: 08:00–12:00 = 4h
@@ -732,7 +725,7 @@ def test_build_day_status_excludes_lunch_from_hours(db):
 
 def test_build_day_status_excludes_configured_tasks(db):
     """_build_day_status excludes tasks listed in excluded_tasks from total_hours."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     today = date.today().strftime("%Y-%m-%d")
     # Work: 08:00–12:00 = 4h
@@ -759,7 +752,7 @@ def test_build_day_status_excludes_configured_tasks(db):
 
 def test_build_day_status_reads_target_from_settings(db):
     """_build_day_status uses the configured daily target, not the hardcoded constant."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     settings = SettingsRepository()
     settings.set_daily_work_target(8.0)
@@ -776,14 +769,14 @@ def test_build_day_status_reads_target_from_settings(db):
 
 def test_lunch_duration_defaults_to_30(db):
     """A fresh database reports the documented 30-minute default."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     assert SettingsRepository().get_lunch_duration_minutes() == 30
 
 
 def test_lunch_duration_migrates_retired_promark_offset(db):
     """A non-zero legacy promark offset is reused as the lunch duration."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     repo.execute(
         "INSERT INTO settings (key, value, updated_at) "
@@ -794,7 +787,7 @@ def test_lunch_duration_migrates_retired_promark_offset(db):
 
 def test_day_span_always_reserves_full_lunch(db):
     """A 20-minute lunch is still registered as the configured 30 minutes."""
-    from Promark import compute_day_promark
+    from app.Promark import compute_day_promark
 
     sessions = [
         ("08:00", "12:00", "WORK"),   # 4h
@@ -814,7 +807,7 @@ def test_day_span_always_reserves_full_lunch(db):
 
 def test_day_span_reserves_lunch_even_when_none_logged(db):
     """The contractual break is reserved regardless of whether lunch was taken."""
-    from Promark import compute_day_promark
+    from app.Promark import compute_day_promark
 
     consolidated, _ = compute_day_promark(
         [("08:00", "12:00", "WORK")], always_separate_tasks=[],
@@ -825,7 +818,7 @@ def test_day_span_reserves_lunch_even_when_none_logged(db):
 
 def test_day_span_has_no_lunch_addition_when_lunch_is_paid(db):
     """Lunch included in working hours means no addition to the day span."""
-    from Promark import compute_day_promark
+    from app.Promark import compute_day_promark
 
     sessions = [
         ("08:00", "12:00", "WORK"),
@@ -842,7 +835,7 @@ def test_day_span_has_no_lunch_addition_when_lunch_is_paid(db):
 def test_leave_projection_shows_lunch_variant_until_logged(db):
     """Both projections are shown while lunch is own time and not yet logged."""
     from datetime import datetime
-    from Printer import leave_projection
+    from app.Printer import leave_projection
 
     today = date.today().strftime("%Y-%m-%d")
     repo.execute(
@@ -861,7 +854,7 @@ def test_leave_projection_shows_lunch_variant_until_logged(db):
 def test_leave_projection_drops_lunch_variant_once_logged(db):
     """Once a Lunch session exists the second projection disappears."""
     from datetime import datetime
-    from Printer import leave_projection
+    from app.Printer import leave_projection
 
     today = date.today().strftime("%Y-%m-%d")
     repo.execute(
@@ -882,8 +875,8 @@ def test_leave_projection_drops_lunch_variant_once_logged(db):
 def test_leave_projection_has_no_lunch_variant_when_lunch_is_paid(db):
     """Paid lunch never pushes the leave time back."""
     from datetime import datetime
-    from Printer import leave_projection
-    from SettingsStorage import SettingsRepository
+    from app.Printer import leave_projection
+    from app.SettingsStorage import SettingsRepository
 
     SettingsRepository().set_lunch_excluded(False)
 
@@ -910,7 +903,7 @@ def _minutes(hhmm: str) -> int:
 
 def test_corrupt_task_list_is_reported_not_silently_emptied(db):
     """An unreadable stored list is flagged so Save can refuse to overwrite it."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     repo.execute(
         "INSERT INTO settings (key, value, updated_at) "
@@ -925,7 +918,7 @@ def test_corrupt_task_list_is_reported_not_silently_emptied(db):
 
 def test_valid_task_list_round_trips(db):
     """A saved task list is read back unchanged and is not flagged as corrupt."""
-    from SettingsStorage import SettingsRepository
+    from app.SettingsStorage import SettingsRepository
 
     settings = SettingsRepository()
     settings.set_excluded_tasks(["commute", "coffee walk"])

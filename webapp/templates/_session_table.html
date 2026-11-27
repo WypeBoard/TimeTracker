@@ -1,0 +1,42 @@
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Today's sessions</h3>
+    </div>
+    <div class="table-responsive">
+        <table class="table card-table table-vcenter">
+            <thead>
+            <tr>
+                <th>#</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Task</th>
+                <th>Epic</th>
+                <th class="text-end">Hours</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% if not view.sessions %}
+            <tr>
+                <td colspan="6" class="text-secondary">No sessions today.</td>
+            </tr>
+            {% endif %}
+            {% for s in view.sessions %}
+            <tr class="{{ 'table-active' if s.is_open else '' }}">
+                <td>#{{ loop.index }}</td>
+                <td>{{ s.start }}</td>
+                <td>
+                    {% if s.is_open %}
+                    <span class="text-success">now &#9658;</span>
+                    {% else %}
+                    {{ s.end }}
+                    {% endif %}
+                </td>
+                <td>{{ s.task }}</td>
+                <td>{{ s.epic_name or "—" }}</td>
+                <td class="text-end">{{ "%.2f"|format(s.hours) }}h</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -1,0 +1,104 @@
+<div class="modal modal-blur fade" id="new-session-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <form class="modal-content" hx-post="/sessions/new" hx-target="#today-dynamic" hx-swap="innerHTML"
+              data-task-epic-map='{{ view.task_epic_id | tojson }}'
+              hx-on::after-request="if(event.detail.successful){this.reset(); bootstrap.Modal.getInstance(document.getElementById('new-session-modal'))?.hide();} updateNewSessionEpicFieldState();">
+            <div class="modal-header">
+                <h5 class="modal-title">New Session</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Task</label>
+                    <input id="new-session-task-input" class="form-control" list="known-tasks-list" name="task" required>
+                    <datalist id="known-tasks-list">
+                        {% for t in view.known_tasks %}
+                        <option value="{{ t }}"></option>
+                        {% endfor %}
+                    </datalist>
+                    <small class="form-hint">Pick an existing task or type a new one.</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Start time</label>
+                    <input type="time" step="300" class="form-control" name="start_time"
+                           value="{{ view.default_start_time }}" required>
+                </div>
+                <div class="mb-3" id="new-session-epic-group">
+                    <label class="form-label">Epic (only used if this task has no Epic yet)</label>
+                    <select id="new-session-epic-select" class="form-select" name="epic_id">
+                        <option value="">— None —</option>
+                        {% for epic_id, epic_name in view.epics %}
+                        <option value="{{ epic_id }}">{{ epic_name }}</option>
+                        {% endfor %}
+                        <option value="__new__">+ New epic…</option>
+                    </select>
+                </div>
+                <div class="mb-3" id="new-session-new-epic-group">
+                    <label class="form-label">New Epic name</label>
+                    <input id="new-session-new-epic-input" class="form-control" name="new_epic_name"
+                           placeholder="Only needed if “+ New epic…” is selected above">
+                </div>
+                <small id="new-session-epic-linked-hint" class="form-hint d-none">
+                    This task is already linked to an Epic — the Epic fields above are disabled.
+                </small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary">Start</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+    // Grays out the Epic fields once the entered Task is already linked to an
+    // Epic (task_catalog has an entry), and shows which Epic it is linked to
+    // in the (disabled) select — see features/standalone-web-app.md Manual
+    // Changes, "New Session modal: conditional Epic field state" and
+    // "show the linked Epic in the disabled select".
+    function updateNewSessionEpicFieldState() {
+        var form = document.querySelector('#new-session-modal form');
+        var taskInput = document.getElementById('new-session-task-input');
+        var epicSelect = document.getElementById('new-session-epic-select');
+        var newEpicInput = document.getElementById('new-session-new-epic-input');
+        var hint = document.getElementById('new-session-epic-linked-hint');
+        if (!form || !taskInput || !epicSelect || !newEpicInput) {
+            return;
+        }
+        var taskEpicMap = {};
+        try {
+            taskEpicMap = JSON.parse(form.dataset.taskEpicMap || "{}");
+        } catch (e) {
+            taskEpicMap = {};
+        }
+        var task = taskInput.value.trim();
+        var linkedEpicId = Object.prototype.hasOwnProperty.call(taskEpicMap, task)
+            ? taskEpicMap[task]
+            : null;
+        var hasEpic = linkedEpicId !== null && linkedEpicId !== undefined;
+
+        epicSelect.disabled = hasEpic;
+        newEpicInput.disabled = hasEpic;
+        if (hint) {
+            hint.classList.toggle("d-none", !hasEpic);
+        }
+        if (hasEpic) {
+            // Pre-select the task's actual linked Epic so the disabled
+            // select shows what it is, instead of blanking it out.
+            epicSelect.value = String(linkedEpicId);
+            newEpicInput.value = "";
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        var taskInput = document.getElementById('new-session-task-input');
+        var modalEl = document.getElementById('new-session-modal');
+        if (taskInput) {
+            taskInput.addEventListener('input', updateNewSessionEpicFieldState);
+            taskInput.addEventListener('change', updateNewSessionEpicFieldState);
+        }
+        if (modalEl) {
+            modalEl.addEventListener('shown.bs.modal', updateNewSessionEpicFieldState);
+        }
+        updateNewSessionEpicFieldState();
+    });
+</script>
