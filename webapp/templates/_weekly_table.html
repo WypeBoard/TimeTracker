@@ -1,0 +1,53 @@
+<div class="card">
+    <div class="table-responsive">
+        <table class="table card-table table-vcenter">
+            <thead>
+            <tr>
+                <th>Name</th>
+                <th class="text-end">HH:MM</th>
+                <th class="text-end">Decimal</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% if not view.days %}
+            <tr>
+                <td colspan="3" class="text-secondary">No tracked time this week.</td>
+            </tr>
+            {% endif %}
+            {% for day in view.days %}
+            <tr class="table-active">
+                <td>
+                    <strong>{{ day.label }}</strong>
+                    {% if day.span %}
+                    <span class="text-secondary ms-2">{{ day.span[0] }} &rarr; {{ day.span[1] }}</span>
+                    {% endif %}
+                </td>
+                <td class="text-end"><strong>{{ day.hhmm }}</strong></td>
+                <td class="text-end"><strong>{{ day.decimal }}</strong></td>
+            </tr>
+            {% for epic in day.epics %}
+            <tr>
+                <td class="ps-4 {{ 'text-secondary' if epic.is_misc else 'text-cyan' }}">{{ epic.name }}</td>
+                <td class="text-end {{ 'text-secondary' if epic.is_misc else 'text-cyan' }}">{{ epic.hhmm }}</td>
+                <td class="text-end {{ 'text-secondary' if epic.is_misc else 'text-cyan' }}">{{ epic.decimal }}</td>
+            </tr>
+            {% for task in epic.tasks %}
+            <tr>
+                <td class="ps-5 text-secondary">{{ task.display_task }}</td>
+                <td class="text-end text-secondary">{{ task.hhmm }}</td>
+                <td class="text-end text-secondary">{{ task.decimal }}</td>
+            </tr>
+            {% endfor %}
+            {% endfor %}
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr>
+                <td><strong>Week total</strong></td>
+                <td class="text-end"><strong>{{ view.week_total_hhmm }}</strong></td>
+                <td class="text-end"><strong>{{ view.week_total_decimal }}</strong></td>
+            </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>

@@ -54,3 +54,36 @@ def test_health_reports_degraded_when_database_unreachable(client, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body == {"status": "degraded", "database_reachable": False}
+
+
+# ---------------------------------------------------------------------------
+# uvicorn access-log suppression for GET /health (Manual Changes, 2026-11-27,
+# "Health check polling interval" — the browser now polls /health every 5
+# minutes, so its access-log entries are filtered out to avoid clutter).
+# ---------------------------------------------------------------------------
+
+def test_health_endpoint_access_log_filter_drops_health_requests():
+    import logging
+
+    from webapp.main import _HealthEndpointAccessLogFilter
+
+    f = _HealthEndpointAccessLogFilter()
+    health_record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 0,
+        '127.0.0.1:12345 - "GET /health HTTP/1.1" 200', (), None,
+    )
+    other_record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 0,
+        '127.0.0.1:12345 - "GET /today HTTP/1.1" 200', (), None,
+    )
+    assert f.filter(health_record) is False
+    assert f.filter(other_record) is True
+
+
+def test_health_endpoint_access_log_filter_is_registered_on_uvicorn_access_logger():
+    import logging
+
+    from webapp.main import _HealthEndpointAccessLogFilter
+
+    filters = logging.getLogger("uvicorn.access").filters
+    assert any(isinstance(f, _HealthEndpointAccessLogFilter) for f in filters)

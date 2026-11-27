@@ -1,9 +1,10 @@
-<div class="row row-deck row-cards mb-3">
+<div id="quick-stats-row" class="row row-deck row-cards mb-3"
+     data-ticker='{{ view.quick_stats.ticker_payload | tojson }}'>
     <div class="col-sm-6 col-lg">
         <div class="card card-sm">
             <div class="card-body">
                 <div class="subheader">Today</div>
-                <div class="h3 mb-0">{{ "%.1f"|format(view.quick_stats.today_logged) }}h / {{ "%.1f"|format(view.quick_stats.today_target) }}h</div>
+                <div class="h3 mb-0" id="qs-today">{{ "%.1f"|format(view.quick_stats.today_logged) }}h / {{ "%.1f"|format(view.quick_stats.today_target) }}h</div>
             </div>
         </div>
     </div>
@@ -11,7 +12,7 @@
         <div class="card card-sm">
             <div class="card-body">
                 <div class="subheader">Rem.</div>
-                <div class="h3 mb-0">{{ "%.1f"|format(view.quick_stats.today_remaining) }}h / {{ "%.1f"|format(view.quick_stats.week_remaining) }}h</div>
+                <div class="h3 mb-0" id="qs-rem">{{ "%.1f"|format(view.quick_stats.today_remaining) }}h / {{ "%.1f"|format(view.quick_stats.week_remaining) }}h</div>
             </div>
         </div>
     </div>
@@ -19,7 +20,7 @@
         <div class="card card-sm">
             <div class="card-body">
                 <div class="subheader">Leave</div>
-                <div class="h3 mb-0">
+                <div class="h3 mb-0" id="qs-leave">
                     {% if view.quick_stats.leave %}
                         ~{{ view.quick_stats.leave }}
                         {% if view.quick_stats.leave_with_lunch %}
@@ -36,7 +37,7 @@
         <div class="card card-sm">
             <div class="card-body">
                 <div class="subheader">Week</div>
-                <div class="h3 mb-0">{{ "%.1f"|format(view.quick_stats.week_logged) }}h / {{ "%.1f"|format(view.quick_stats.week_target) }}h</div>
+                <div class="h3 mb-0" id="qs-week">{{ "%.1f"|format(view.quick_stats.week_logged) }}h / {{ "%.1f"|format(view.quick_stats.week_target) }}h</div>
             </div>
         </div>
     </div>
@@ -49,3 +50,12 @@
         </div>
     </div>
 </div>
+
+<script>
+    // Re-init on every page load and every HTMX fragment swap (htmx
+    // evaluates inline script tags found in swapped-in content by default),
+    // so the ticker always restarts from the latest server snapshot in
+    // #quick-stats-row's data-ticker attribute above. See Manual Changes,
+    // 2026-11-27, "Quick Stats client-side ticker".
+    initQuickStatsTicker();
+</script>

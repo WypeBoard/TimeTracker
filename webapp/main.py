@@ -20,7 +20,26 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from webapp.routes import health, today, weekly, settings as settings_routes
+import logging
 import os
+
+
+class _HealthEndpointAccessLogFilter(logging.Filter):
+    """Drop uvicorn access-log records for GET /health.
+
+    The browser now polls /health every 5 minutes (see Manual Changes,
+    2026-11-27, "Health check polling interval"), which would otherwise
+    clutter the uvicorn access log with a routine entry every 5 minutes
+    forever. Matches on the formatted message rather than parsing args,
+    since uvicorn's access-log record shape isn't a stable public API across
+    versions.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/health" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_HealthEndpointAccessLogFilter())
 
 app = FastAPI(title="TimeTracker")
 

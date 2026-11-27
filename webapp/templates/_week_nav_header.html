@@ -1,0 +1,24 @@
+<div class="card mb-3">
+    <div class="card-body d-flex align-items-center justify-content-between">
+        <a href="/weekly?year={{ view.prev_week[1] }}&amp;week={{ view.prev_week[0] }}"
+           hx-get="/weekly?year={{ view.prev_week[1] }}&amp;week={{ view.prev_week[0] }}"
+           hx-target="#weekly-dynamic" hx-swap="innerHTML" hx-push-url="true"
+           class="btn btn-outline-secondary btn-icon" aria-label="Previous week">&laquo;</a>
+        <div class="text-center">
+            <div class="h3 mb-0">{{ view.week_label }}</div>
+            <div class="text-secondary">{{ view.date_range_label }}</div>
+            {% if not view.is_current_week %}
+            <a href="/weekly" hx-get="/weekly" hx-target="#weekly-dynamic" hx-swap="innerHTML" hx-push-url="true"
+               class="btn btn-sm btn-outline-primary mt-1">Current week</a>
+            {% endif %}
+        </div>
+        {% if view.can_go_next %}
+        <a href="/weekly?year={{ view.next_week[1] }}&amp;week={{ view.next_week[0] }}"
+           hx-get="/weekly?year={{ view.next_week[1] }}&amp;week={{ view.next_week[0] }}"
+           hx-target="#weekly-dynamic" hx-swap="innerHTML" hx-push-url="true"
+           class="btn btn-outline-secondary btn-icon" aria-label="Next week">&raquo;</a>
+        {% else %}
+        <button type="button" class="btn btn-outline-secondary btn-icon" disabled aria-label="Next week">&raquo;</button>
+        {% endif %}
+    </div>
+</div>

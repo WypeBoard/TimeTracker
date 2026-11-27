@@ -14,6 +14,10 @@
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js" defer></script>
     <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <!-- Not deferred: must be defined before _quick_stats.html's inline
+         initQuickStatsTicker() call runs during body parsing (see Manual
+         Changes, 2026-11-27, "Quick Stats client-side ticker"). -->
+    <script src="/static/js/quick-stats-ticker.js"></script>
 </head>
 <body>
 <header class="navbar navbar-expand-md navbar-light d-print-none">
@@ -40,29 +44,37 @@
 </div>
 
 <script>
-    // On-load /health check, per features/standalone-web-app.md Requirements.
-    fetch("/health")
-        .then(function (response) {
-            if (!response.ok) {
-                throw new Error("non-200");
-            }
-            return response.json();
-        })
-        .then(function (data) {
-            var el = document.getElementById("backend-status");
-            if (data.status === "ok") {
-                el.textContent = "Backend: up";
-                el.className = "badge bg-success-lt ms-auto";
-            } else {
-                el.textContent = "Backend: degraded";
-                el.className = "badge bg-warning-lt ms-auto";
-            }
-        })
-        .catch(function () {
-            var el = document.getElementById("backend-status");
-            el.textContent = "Backend: down";
-            el.className = "badge bg-danger-lt ms-auto";
-        });
+    // /health check, per features/standalone-web-app.md Requirements. Runs
+    // on page load and then every 5 minutes (see Manual Changes, 2026-11-27,
+    // "Health check polling interval") — the original Brainstorm Notes'
+    // ~5-minute re-poll cadence, upgraded from a load-only check.
+    function checkBackendHealth() {
+        fetch("/health")
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error("non-200");
+                }
+                return response.json();
+            })
+            .then(function (data) {
+                var el = document.getElementById("backend-status");
+                if (data.status === "ok") {
+                    el.textContent = "Backend: up";
+                    el.className = "badge bg-success-lt ms-auto";
+                } else {
+                    el.textContent = "Backend: degraded";
+                    el.className = "badge bg-warning-lt ms-auto";
+                }
+            })
+            .catch(function () {
+                var el = document.getElementById("backend-status");
+                el.textContent = "Backend: down";
+                el.className = "badge bg-danger-lt ms-auto";
+            });
+    }
+
+    checkBackendHealth();
+    setInterval(checkBackendHealth, 5 * 60 * 1000);
 </script>
 </body>
 </html>

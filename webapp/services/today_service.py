@@ -32,6 +32,36 @@ class QuickStats:
     week_logged: float
     week_target: float
     sessions_count: int
+    # The following are not displayed directly; they are embedded as JSON in
+    # _quick_stats.html so the browser can keep Today/Rem./Leave/Week ticking
+    # every minute while a session is open, purely by re-running the same
+    # arithmetic client-side — no network call. See Manual Changes,
+    # 2026-11-27, "Quick Stats client-side ticker".
+    active_session_start: str | None = None
+    baseline_today_logged: float = 0.0
+    baseline_week_logged: float = 0.0
+    lunch_excluded: bool = False
+    lunch_logged: bool = False
+    lunch_duration_minutes: int = 0
+
+    @property
+    def ticker_payload(self) -> dict:
+        """JSON-serializable payload for webapp/static/js/quick-stats-ticker.js.
+
+        Built here (rather than as an inline dict literal in the template)
+        so the shape lives in one place and _quick_stats.html only has to
+        render ``{{ view.quick_stats.ticker_payload | tojson }}``.
+        """
+        return {
+            "active_start": self.active_session_start,
+            "daily_target": self.today_target,
+            "week_target": self.week_target,
+            "baseline_today": self.baseline_today_logged,
+            "baseline_week": self.baseline_week_logged,
+            "lunch_excluded": self.lunch_excluded,
+            "lunch_logged": self.lunch_logged,
+            "lunch_duration": self.lunch_duration_minutes,
+        }
 
 
 @dataclass
@@ -374,6 +404,12 @@ def _compute_quick_stats(now: datetime, today_sessions: list[tuple]) -> QuickSta
         week_logged=week_total,
         week_target=week_target,
         sessions_count=len(today_sessions),
+        active_session_start=active_start,
+        baseline_today_logged=total_hours,
+        baseline_week_logged=week_total - active_hours,
+        lunch_excluded=lunch_excluded,
+        lunch_logged=lunch_logged,
+        lunch_duration_minutes=lunch_duration,
     )
 
 

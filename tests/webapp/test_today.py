@@ -232,3 +232,38 @@ def test_quick_stats_sessions_count_and_target(client):
     assert "7.4h" in response.text
     # Two closed sessions today => Sessions count of 2.
     assert ">2<" in response.text
+
+
+# ---------------------------------------------------------------------------
+# Quick Stats client-side ticker (Manual Changes, 2026-11-27, "Quick Stats
+# client-side ticker"): the baseline data embedded for
+# webapp/static/js/quick-stats-ticker.js to recompute Today/Rem./Leave/Week
+# every minute without a network round-trip.
+# ---------------------------------------------------------------------------
+
+def test_quick_stats_ticker_data_absent_when_no_open_session(client):
+    _insert_session("08:00", "09:00", "TASK-1")
+    response = client.get("/today")
+    assert response.status_code == 200
+    assert 'id="quick-stats-row"' in response.text
+    assert '"active_start": null' in response.text
+
+
+def test_quick_stats_ticker_data_present_when_session_open(client):
+    _insert_session("08:00", None, "TASK-1")
+    response = client.get("/today")
+    assert response.status_code == 200
+    assert '"active_start": "08:00"' in response.text
+    assert '"baseline_today": 0.0' in response.text
+    assert "initQuickStatsTicker();" in response.text
+
+
+def test_quick_stats_ticker_baseline_excludes_active_session_hours(client):
+    """baseline_today_logged must be the *completed*-session total only, so
+    the client can add its own freshly-computed active-session hours on
+    top without double counting."""
+    _insert_session("08:00", "09:00", "TASK-1")  # 1h completed
+    _insert_session("09:00", None, "TASK-2")  # open
+    response = client.get("/today")
+    assert response.status_code == 200
+    assert '"baseline_today": 1.0' in response.text
